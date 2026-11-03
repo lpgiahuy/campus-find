@@ -1,0 +1,1 @@
+"""Catalog Data Access Repository."""
