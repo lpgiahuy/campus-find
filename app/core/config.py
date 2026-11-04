@@ -26,6 +26,9 @@ class Settings(BaseSettings):
             return self.SYNC_DATABASE_URL
         return self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
+    # JWT Authentication
+    JWT_SECRET_KEY: str
+
     # CORS Origins
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
