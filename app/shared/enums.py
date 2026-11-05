@@ -1,3 +1,7 @@
 """Shared Enums (UserRole, ReportStatus, ClaimStatus, MatchLevel, HandoverMethod)."""
+from enum import StrEnum
 
-# Sẽ định nghĩa các Enum theo thiết kế CSDL 9 bảng.
+
+class UserRole(StrEnum):
+    ADMIN = "ADMIN"
+    USER = "USER"
