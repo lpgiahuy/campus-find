@@ -31,7 +31,8 @@ class RegisterRequest(BaseSchema):
 
 class LoginRequest(BaseSchema):
     email: EmailStr
-    password: Password
+    # Trùng mẫu "stringst" Swagger tự sinh cho register (min 8 ký tự) để thử nhanh register → login.
+    password: Password = Field(..., examples=["stringst"])
 
 
 class TokenData(BaseSchema):
