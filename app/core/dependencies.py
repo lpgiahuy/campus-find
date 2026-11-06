@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Callable, Optional, Type, TypeVar
 from uuid import UUID
 
@@ -19,6 +20,7 @@ T = TypeVar("T")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+@lru_cache
 def get_service(service_cls: Type[T]) -> Callable[[AsyncSession], T]:
     """
     Dependency Injection Factory: Tạo instance Service và tự động inject DB Session.
@@ -55,6 +57,23 @@ async def get_current_user(
         raise UnauthorizedError("Token không hợp lệ hoặc đã hết hạn")
     if not user.is_active:
         raise ForbiddenError("Tài khoản đã bị khóa")
+    return user
+
+
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    if credentials is None:
+        return None
+    try:
+        payload = decode_token(credentials.credentials)
+        user_id = UUID(payload["sub"])
+    except Exception:
+        return None
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None or not user.is_active:
+        return None
     return user
 
 

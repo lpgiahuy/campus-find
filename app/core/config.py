@@ -36,6 +36,18 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, v: Union[bool, str]) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            if v.lower() in ("true", "1", "yes", "dev", "development"):
+                return True
+            if v.lower() in ("false", "0", "no", "release", "prod", "production"):
+                return False
+        return True
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
