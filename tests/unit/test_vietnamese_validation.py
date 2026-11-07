@@ -3,6 +3,7 @@ import unicodedata
 import pytest
 
 from app.shared.utils import (
+    escape_like_term,
     normalize_vietnamese_text,
     validate_vietnamese_name,
     validate_vietnamese_title,
@@ -21,6 +22,17 @@ def test_normalize_vietnamese_nfd_to_nfc():
 def test_normalize_vietnamese_whitespace():
     raw = "   Trần   Văn   B   "
     assert normalize_vietnamese_text(raw) == "Trần Văn B"
+
+
+def test_normalize_vietnamese_preserve_newlines():
+    raw = "  Dòng 1  \n\nDòng 2  \n  Dòng 3  "
+    normalized = normalize_vietnamese_text(raw, preserve_newlines=True)
+    assert normalized == "Dòng 1  \n\nDòng 2  \n  Dòng 3"
+
+
+def test_escape_like_term():
+    assert escape_like_term("normal text") == "normal text"
+    assert escape_like_term("100%_safe\\path") == "100\\%\\_safe\\\\path"
 
 
 @pytest.mark.parametrize(

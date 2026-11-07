@@ -22,14 +22,14 @@ class CategoryCreate(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if not v:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 
 class CategoryUpdate(BaseSchema):
     name: str = Field(min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
-    is_active: bool = True
+    is_active: bool
 
     @field_validator("name")
     @classmethod
@@ -43,7 +43,7 @@ class CategoryUpdate(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if not v:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 
@@ -66,7 +66,7 @@ class CategoryPatch(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 
@@ -93,14 +93,14 @@ class LocationCreate(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if not v:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 
 class LocationUpdate(BaseSchema):
     name: str = Field(min_length=2, max_length=150)
     description: str | None = Field(default=None, max_length=1000)
-    is_active: bool = True
+    is_active: bool
 
     @field_validator("name")
     @classmethod
@@ -114,7 +114,7 @@ class LocationUpdate(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if not v:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 
@@ -137,7 +137,7 @@ class LocationPatch(BaseSchema):
     def validate_desc(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        cleaned = normalize_vietnamese_text(v)
+        cleaned = normalize_vietnamese_text(v, preserve_newlines=True)
         return cleaned or None
 
 

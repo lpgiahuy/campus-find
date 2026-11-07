@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Callable, Optional, Type, TypeVar
+from typing import Annotated, TypeVar
 from uuid import UUID
 
 from fastapi import Depends, Query
@@ -21,12 +22,13 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @lru_cache
-def get_service(service_cls: Type[T]) -> Callable[[AsyncSession], T]:
+def get_service(service_cls: type[T]) -> Callable[[AsyncSession], T]:
     """
     Dependency Injection Factory: Tạo instance Service và tự động inject DB Session.
     Cách dùng trong Router: service: MyService = Depends(get_service(MyService))
     """
-    def _get_service(db: AsyncSession = Depends(get_db)) -> T:
+
+    def _get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> T:
         return service_cls(db)
 
     return _get_service
@@ -34,15 +36,19 @@ def get_service(service_cls: Type[T]) -> Callable[[AsyncSession], T]:
 
 def get_pagination(
     page: int = Query(default=1, ge=1, description="Số thứ tự trang (bắt đầu từ 1)"),
-    page_size: int = Query(default=20, ge=1, le=100, description="Số bản ghi mỗi trang (tối đa 100)"),
+    page_size: int = Query(
+        default=20, ge=1, le=100, description="Số bản ghi mỗi trang (tối đa 100)"
+    ),
 ) -> PaginationParams:
     """Dependency Injection: Trích xuất và validate tham số phân trang."""
     return PaginationParams(page=page, page_size=page_size)
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: AsyncSession = Depends(get_db),
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Dependency: Bắt buộc đăng nhập. Đọc lại user từ DB để tài khoản bị khóa mất quyền ngay."""
     if credentials is None:
@@ -61,9 +67,11 @@ async def get_current_user(
 
 
 async def get_optional_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> Optional[User]:
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
     if credentials is None:
         return None
     try:
@@ -77,7 +85,9 @@ async def get_optional_current_user(
     return user
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> User:
+async def require_admin(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
     """Dependency: Bắt buộc role ADMIN."""
     if user.role != UserRole.ADMIN:
         raise ForbiddenError()

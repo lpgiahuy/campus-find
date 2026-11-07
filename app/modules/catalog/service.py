@@ -15,6 +15,7 @@ from app.modules.catalog.schemas import (
     LocationUpdate,
 )
 from app.shared.service import BaseService
+from app.shared.utils import handle_unique_violation
 
 
 class CatalogService(BaseService):
@@ -37,9 +38,9 @@ class CatalogService(BaseService):
             limit=limit,
         )
 
-    async def get_category(self, category_id: UUID) -> Category:
+    async def get_category(self, category_id: UUID, is_admin: bool = False) -> Category:
         category = await self.categories.get_by_id(category_id)
-        if not category:
+        if not category or (not category.is_active and not is_admin):
             raise NotFoundError("Danh mục không tồn tại")
         return category
 
@@ -48,61 +49,41 @@ class CatalogService(BaseService):
             name=data.name,
             description=data.description,
         )
-        try:
+        async with handle_unique_violation("Tên danh mục đã tồn tại trong hệ thống"):
             await self.categories.create(category)
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên danh mục đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(category)
         return category
 
     async def update_category(
         self, category_id: UUID, data: CategoryUpdate
     ) -> Category:
-        category = await self.get_category(category_id)
+        category = await self.get_category(category_id, is_admin=True)
         category.name = data.name
         category.description = data.description
         category.is_active = data.is_active
-        try:
+        async with handle_unique_violation("Tên danh mục đã tồn tại trong hệ thống"):
             await self.db.flush()
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên danh mục đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(category)
         return category
 
     async def patch_category(self, category_id: UUID, data: CategoryPatch) -> Category:
-        category = await self.get_category(category_id)
-        if data.name is not None:
-            category.name = data.name
-        if data.description is not None:
-            category.description = data.description
-        if data.is_active is not None:
-            category.is_active = data.is_active
-        try:
+        category = await self.get_category(category_id, is_admin=True)
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(category, field, value)
+        async with handle_unique_violation("Tên danh mục đã tồn tại trong hệ thống"):
             await self.db.flush()
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên danh mục đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(category)
         return category
 
     async def delete_category(self, category_id: UUID) -> None:
-        category = await self.get_category(category_id)
-        if await self.categories.has_associated_reports(category_id):
-            raise ConflictError(
-                "Danh mục đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn. "
-                "Vui lòng chuyển trạng thái sang ngưng hoạt động (is_active=False)."
-            )
+        category = await self.get_category(category_id, is_admin=True)
         try:
             await self.categories.delete(category)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) == "23503":
                 raise ConflictError(
-                    "Danh mục đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn."
+                    "Danh mục đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn. "
+                    "Vui lòng chuyển trạng thái sang ngưng hoạt động (is_active=False)."
                 ) from exc
             raise
 
@@ -120,9 +101,9 @@ class CatalogService(BaseService):
             limit=limit,
         )
 
-    async def get_location(self, location_id: UUID) -> Location:
+    async def get_location(self, location_id: UUID, is_admin: bool = False) -> Location:
         location = await self.locations.get_by_id(location_id)
-        if not location:
+        if not location or (not location.is_active and not is_admin):
             raise NotFoundError("Địa điểm không tồn tại")
         return location
 
@@ -131,60 +112,40 @@ class CatalogService(BaseService):
             name=data.name,
             description=data.description,
         )
-        try:
+        async with handle_unique_violation("Tên địa điểm đã tồn tại trong hệ thống"):
             await self.locations.create(location)
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên địa điểm đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(location)
         return location
 
     async def update_location(
         self, location_id: UUID, data: LocationUpdate
     ) -> Location:
-        location = await self.get_location(location_id)
+        location = await self.get_location(location_id, is_admin=True)
         location.name = data.name
         location.description = data.description
         location.is_active = data.is_active
-        try:
+        async with handle_unique_violation("Tên địa điểm đã tồn tại trong hệ thống"):
             await self.db.flush()
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên địa điểm đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(location)
         return location
 
     async def patch_location(self, location_id: UUID, data: LocationPatch) -> Location:
-        location = await self.get_location(location_id)
-        if data.name is not None:
-            location.name = data.name
-        if data.description is not None:
-            location.description = data.description
-        if data.is_active is not None:
-            location.is_active = data.is_active
-        try:
+        location = await self.get_location(location_id, is_admin=True)
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(location, field, value)
+        async with handle_unique_violation("Tên địa điểm đã tồn tại trong hệ thống"):
             await self.db.flush()
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise ConflictError("Tên địa điểm đã tồn tại trong hệ thống") from exc
-            raise
         await self.db.refresh(location)
         return location
 
     async def delete_location(self, location_id: UUID) -> None:
-        location = await self.get_location(location_id)
-        if await self.locations.has_associated_reports(location_id):
-            raise ConflictError(
-                "Địa điểm đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn. "
-                "Vui lòng chuyển trạng thái sang ngưng hoạt động (is_active=False)."
-            )
+        location = await self.get_location(location_id, is_admin=True)
         try:
             await self.locations.delete(location)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) == "23503":
                 raise ConflictError(
-                    "Địa điểm đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn."
+                    "Địa điểm đang được sử dụng trong các tin báo thất lạc, không thể xóa vĩnh viễn. "
+                    "Vui lòng chuyển trạng thái sang ngưng hoạt động (is_active=False)."
                 ) from exc
             raise

@@ -6,6 +6,7 @@ from app.core.exceptions import BusinessLogicError, NotFoundError
 from app.db.models import User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserProfileUpdate
+from app.shared.enums import UserRole
 from app.shared.service import BaseService
 
 
@@ -38,25 +39,23 @@ class UserService(BaseService):
 
     async def update_status(
         self, target_user_id: UUID, is_active: bool, current_admin: User
-    ) -> User:
-        if target_user_id == current_admin.id and not is_active:
-            raise BusinessLogicError(
-                "Bạn không thể tự khóa tài khoản quản trị của chính mình"
-            )
-        user = await self.get_user_by_id(target_user_id)
-        user.is_active = is_active
+    ):
+        target_user = await self.get_user_by_id(target_user_id)
+        if target_user.role == UserRole.ADMIN and not is_active:
+            if target_user_id == current_admin.id:
+                raise BusinessLogicError(
+                    "Bạn không thể tự khóa tài khoản quản trị của chính mình"
+                )
+            raise BusinessLogicError("Không thể khóa tài khoản của Quản trị viên khác")
+        target_user.is_active = is_active
         await self.db.flush()
-        await self.db.refresh(user)
-        return user
+        await self.db.refresh(target_user)
+        return target_user
 
     async def update_profile(self, user_id: UUID, data: UserProfileUpdate) -> User:
         user = await self.get_user_by_id(user_id)
-        if data.full_name is not None:
-            user.full_name = data.full_name
-        if data.contact_phone is not None:
-            user.contact_phone = data.contact_phone
-        if data.allow_contact_sharing is not None:
-            user.allow_contact_sharing = data.allow_contact_sharing
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
         await self.db.flush()
         await self.db.refresh(user)
         return user

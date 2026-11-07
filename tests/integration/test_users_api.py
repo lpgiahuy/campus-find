@@ -120,7 +120,7 @@ async def test_admin_lock_user_success(client_admin, mock_user_service):
 
     response = await ac.patch(
         f"/api/v1/users/{target_user.id}/status",
-        json={"is_active": False, "reason": "Vi phạm quy chế"},
+        json={"is_active": False},
     )
     assert response.status_code == 200
     assert response.json()["data"]["is_active"] is False
@@ -134,6 +134,21 @@ async def test_admin_self_lock_rejected(client_admin, mock_user_service):
 
     response = await ac.patch(
         f"/api/v1/users/{admin_user.id}/status",
+        json={"is_active": False},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "BUSINESS_RULE_VIOLATION"
+
+
+async def test_admin_lock_other_admin_rejected(client_admin, mock_user_service):
+    ac, _ = client_admin
+    other_admin = make_user(role=UserRole.ADMIN.value, email="admin2@uit.edu.vn")
+    mock_user_service.update_status.side_effect = BusinessLogicError(
+        "Không thể khóa tài khoản của Quản trị viên khác"
+    )
+
+    response = await ac.patch(
+        f"/api/v1/users/{other_admin.id}/status",
         json={"is_active": False},
     )
     assert response.status_code == 400

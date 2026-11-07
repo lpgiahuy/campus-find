@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Optional
+from typing import Any
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -16,7 +17,7 @@ class AppException(Exception):
         message: str = "Đã xảy ra lỗi máy chủ nội bộ",
         status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
         code: str = "INTERNAL_SERVER_ERROR",
-        details: Optional[Any] = None,
+        details: Any | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -28,7 +29,9 @@ class AppException(Exception):
 class NotFoundError(AppException):
     """Lỗi không tìm thấy tài nguyên (HTTP 404)."""
 
-    def __init__(self, message: str = "Tài nguyên không tồn tại", details: Optional[Any] = None):
+    def __init__(
+        self, message: str = "Tài nguyên không tồn tại", details: Any | None = None
+    ):
         super().__init__(
             message=message,
             status_code=status.HTTP_404_NOT_FOUND,
@@ -40,7 +43,9 @@ class NotFoundError(AppException):
 class UnauthorizedError(AppException):
     """Lỗi xác thực, chưa đăng nhập hoặc token không hợp lệ (HTTP 401)."""
 
-    def __init__(self, message: str = "Yêu cầu xác thực tài khoản", details: Optional[Any] = None):
+    def __init__(
+        self, message: str = "Yêu cầu xác thực tài khoản", details: Any | None = None
+    ):
         super().__init__(
             message=message,
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,7 +57,11 @@ class UnauthorizedError(AppException):
 class ForbiddenError(AppException):
     """Lỗi không có quyền truy cập / vi phạm RBAC hoặc Ownership (HTTP 403)."""
 
-    def __init__(self, message: str = "Bạn không có quyền thực hiện hành động này", details: Optional[Any] = None):
+    def __init__(
+        self,
+        message: str = "Bạn không có quyền thực hiện hành động này",
+        details: Any | None = None,
+    ):
         super().__init__(
             message=message,
             status_code=status.HTTP_403_FORBIDDEN,
@@ -64,7 +73,9 @@ class ForbiddenError(AppException):
 class ConflictError(AppException):
     """Lỗi xung đột dữ liệu (Email trùng, bàn giao trùng, trạng thái không hợp lệ) (HTTP 409)."""
 
-    def __init__(self, message: str = "Dữ liệu bị xung đột", details: Optional[Any] = None):
+    def __init__(
+        self, message: str = "Dữ liệu bị xung đột", details: Any | None = None
+    ):
         super().__init__(
             message=message,
             status_code=status.HTTP_409_CONFLICT,
@@ -76,7 +87,11 @@ class ConflictError(AppException):
 class BusinessLogicError(AppException):
     """Lỗi vi phạm quy tắc nghiệp vụ hệ thống (HTTP 400)."""
 
-    def __init__(self, message: str = "Yêu cầu vi phạm quy tắc nghiệp vụ", details: Optional[Any] = None):
+    def __init__(
+        self,
+        message: str = "Yêu cầu vi phạm quy tắc nghiệp vụ",
+        details: Any | None = None,
+    ):
         super().__init__(
             message=message,
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -103,19 +118,23 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_exception_handler(
+        _: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         # Chuẩn hóa lỗi validation từ Pydantic
         errors = []
         for err in exc.errors():
             loc = " -> ".join(str(item) for item in err.get("loc", []))
-            errors.append({
-                "field": loc,
-                "message": err.get("msg"),
-                "type": err.get("type"),
-            })
+            errors.append(
+                {
+                    "field": loc,
+                    "message": err.get("msg"),
+                    "type": err.get("type"),
+                }
+            )
 
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "success": False,
                 "error": {

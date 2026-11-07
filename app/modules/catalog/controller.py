@@ -1,4 +1,3 @@
-import math
 from typing import Annotated
 from uuid import UUID
 
@@ -29,6 +28,7 @@ from app.shared.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
+from app.shared.utils import calculate_total_pages
 
 categories_router = APIRouter(prefix="/categories", tags=["Categories"])
 locations_router = APIRouter(prefix="/locations", tags=["Locations"])
@@ -57,14 +57,13 @@ async def list_categories(
         keyword=keyword,
         is_active=effective_is_active,
     )
-    total_pages = math.ceil(total / pagination.page_size) if total > 0 else 0
     return PaginatedResponse(
         data=PaginatedData(
             items=[CategoryRead.model_validate(item) for item in items],
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
-            total_pages=total_pages,
+            total_pages=calculate_total_pages(total, pagination.page_size),
         )
     )
 
@@ -76,9 +75,11 @@ async def list_categories(
 )
 async def get_category(
     id: UUID,
-    service: Annotated[CatalogService, Depends(get_service(CatalogService))],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    service: Annotated[CatalogService, Depends(get_service(CatalogService))] = None,
 ) -> ApiResponse[CategoryRead]:
-    category = await service.get_category(id)
+    is_admin = bool(current_user and current_user.role == UserRole.ADMIN)
+    category = await service.get_category(id, is_admin=is_admin)
     return ApiResponse(data=CategoryRead.model_validate(category))
 
 
@@ -173,14 +174,13 @@ async def list_locations(
         keyword=keyword,
         is_active=effective_is_active,
     )
-    total_pages = math.ceil(total / pagination.page_size) if total > 0 else 0
     return PaginatedResponse(
         data=PaginatedData(
             items=[LocationRead.model_validate(item) for item in items],
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
-            total_pages=total_pages,
+            total_pages=calculate_total_pages(total, pagination.page_size),
         )
     )
 
@@ -192,9 +192,11 @@ async def list_locations(
 )
 async def get_location(
     id: UUID,
-    service: Annotated[CatalogService, Depends(get_service(CatalogService))],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    service: Annotated[CatalogService, Depends(get_service(CatalogService))] = None,
 ) -> ApiResponse[LocationRead]:
-    location = await service.get_location(id)
+    is_admin = bool(current_user and current_user.role == UserRole.ADMIN)
+    location = await service.get_location(id, is_admin=is_admin)
     return ApiResponse(data=LocationRead.model_validate(location))
 
 

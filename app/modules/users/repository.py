@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
 from app.shared.repository import BaseRepository
+from app.shared.utils import escape_like_term
 
 
 class UserRepository(BaseRepository[User]):
@@ -35,7 +36,7 @@ class UserRepository(BaseRepository[User]):
             count_stmt = count_stmt.where(User.is_active == is_active)
 
         if keyword:
-            kw = f"%{keyword.strip()}%"
+            kw = f"%{escape_like_term(keyword.strip())}%"
             filter_expr = or_(
                 User.full_name.ilike(kw),
                 User.email.ilike(kw),

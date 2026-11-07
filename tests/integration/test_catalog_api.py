@@ -158,6 +158,15 @@ async def test_delete_category_conflict_reports(
     assert response.status_code == 409
 
 
+async def test_put_category_requires_is_active(client_admin: AsyncClient):
+    cat_id = uuid.uuid4()
+    response = await client_admin.put(
+        f"/api/v1/categories/{cat_id}",
+        json={"name": "Đổi tên mới"},
+    )
+    assert response.status_code == 422
+
+
 async def test_list_locations_user(client_user: AsyncClient, mock_catalog_service):
     loc = make_location()
     mock_catalog_service.list_locations.return_value = ([loc], 1)

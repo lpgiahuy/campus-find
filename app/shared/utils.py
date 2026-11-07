@@ -1,5 +1,11 @@
+import math
 import re
 import unicodedata
+from contextlib import asynccontextmanager
+
+from sqlalchemy.exc import IntegrityError
+
+from app.core.exceptions import ConflictError
 
 VIETNAMESE_NAME_PATTERN = re.compile(
     r"^[a-zA-Z\sàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ'\-]+$"
@@ -14,11 +20,31 @@ VIETNAMESE_LETTER_OR_DIGIT_PATTERN = re.compile(
 )
 
 
-def normalize_vietnamese_text(text: str) -> str:
+def normalize_vietnamese_text(text: str, preserve_newlines: bool = False) -> str:
     if not text:
         return text
     normalized = unicodedata.normalize("NFC", text)
+    if preserve_newlines:
+        return normalized.strip()
     return re.sub(r"\s+", " ", normalized).strip()
+
+
+def escape_like_term(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def calculate_total_pages(total: int, page_size: int) -> int:
+    return math.ceil(total / page_size) if total > 0 else 0
+
+
+@asynccontextmanager
+async def handle_unique_violation(message: str):
+    try:
+        yield
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            raise ConflictError(message) from exc
+        raise
 
 
 def validate_vietnamese_name(value: str, min_len: int = 2, max_len: int = 150) -> str:

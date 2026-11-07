@@ -22,7 +22,6 @@ class UserRead(BaseSchema):
 
 class UserStatusUpdate(BaseSchema):
     is_active: bool
-    reason: str | None = Field(default=None, max_length=500)
 
 
 class UserProfileUpdate(BaseSchema):
@@ -42,4 +41,5 @@ class UserProfileUpdate(BaseSchema):
     def clean_phone(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        return v.strip() or None
+        cleaned = v.strip()
+        return cleaned or None

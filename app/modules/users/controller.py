@@ -1,4 +1,3 @@
-import math
 from typing import Annotated
 from uuid import UUID
 
@@ -21,6 +20,7 @@ from app.shared.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
+from app.shared.utils import calculate_total_pages
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -50,14 +50,13 @@ async def list_users(
         role=role_str,
         is_active=is_active,
     )
-    total_pages = math.ceil(total / pagination.page_size) if total > 0 else 0
     return PaginatedResponse(
         data=PaginatedData(
             items=[UserRead.model_validate(item) for item in items],
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
-            total_pages=total_pages,
+            total_pages=calculate_total_pages(total, pagination.page_size),
         )
     )
 
