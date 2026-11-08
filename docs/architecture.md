@@ -65,8 +65,8 @@ flowchart TD
     *   Xử lý logic phân trang (`offset`, `limit`), lọc điều kiện và sắp xếp.
 
 4.  **Matching Engine (`app/modules/matching/engine/`)**:
-    *   `normalizer.py` (chưa triển khai): Chuẩn hóa Unicode NFC tiếng Việt, xóa khoảng trắng thừa, xóa dấu tiếng Việt phục vụ so sánh không dấu.
-    *   `aliases.py` (chưa triển khai): Từ điển từ đồng nghĩa tiếng Việt (balo / ba lô, tai nghe / airpods, v.v.).
+    *   `normalizer.py`: `normalize()` bỏ dấu, chữ thường, chỉ giữ `a-z0-9`, gộp khoảng trắng — chỉ dùng khi so khớp. Chi tiết: [matching-normalizer.md](matching-normalizer.md).
+    *   `aliases.py`: Bảng từ đồng nghĩa tên đồ / màu (balo / ba lô, tai nghe / airpods, đen / black…) và `apply_aliases()`.
     *   `scorer.py` (chưa triển khai): Tính điểm tương đồng có trọng số \(S = 100(0.35N + 0.25C + 0.15K + 0.15L + 0.10T)\) và trả về `score_breakdown` giải thích nguyên nhân.
 
 ---
