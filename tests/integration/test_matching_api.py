@@ -58,3 +58,17 @@ async def test_matching_similarity_missing_required_fields(client: AsyncClient):
         json={"text_a": "ví da"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_similarity_invalid_alias_type_returns_422(client: AsyncClient):
+    """Giá trị alias_type không thuộc Literal ['item', 'color'] trả về 422 thay vì 500."""
+    response = await client.post(
+        "/api/v1/matching/similarity",
+        json={
+            "text_a": "string",
+            "text_b": "string",
+            "alias_type": "string",
+        },
+    )
+    assert response.status_code == 422

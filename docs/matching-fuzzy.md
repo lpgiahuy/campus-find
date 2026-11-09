@@ -58,7 +58,9 @@ Nếu chỉ dùng `token_set_ratio`, một từ ngắn (ví dụ `tai nghe`) s�
 
 $$\text{length\_penalty} = \frac{\min(\text{len}(T_A), \text{len}(T_B))}{\max(\text{len}(T_A), \text{len}(T_B))}$$
 
-$$\text{penalized\_token\_set} = \text{token\_set\_ratio} \times (0.8 + 0.2 \times \text{length\_penalty})$$
+$$\text{penalty} = \begin{cases} \text{length\_penalty}^{0.5} & \text{khi } \min(\text{len}) = 1 \text{ và } \max(\text{len}) > 1 \\ 0.7 + 0.3 \times \text{length\_penalty} & \text{ngược lại} \end{cases}$$
+
+$$\text{penalized\_token\_set} = \text{token\_set\_ratio} \times \text{penalty}$$
 
 $$\text{final\_score} = \max(\text{Levenshtein}, \max(\text{TokenSort}, \text{penalized\_token\_set}))$$
 

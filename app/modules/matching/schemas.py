@@ -1,5 +1,7 @@
 """Matching Pydantic Schemas."""
 
+from typing import Literal
+
 from pydantic import Field
 
 from app.shared.schemas import BaseSchema
@@ -58,7 +60,7 @@ class FuzzyCheckRequest(BaseSchema):
     text_b: str = Field(
         description="Chuỗi văn bản thứ hai (ví dụ: tên đồ người nhặt)",
     )
-    alias_type: str | None = Field(
+    alias_type: Literal["item", "color"] | None = Field(
         default=None,
-        description="Bảng alias cần áp dụng: 'item', 'color' hoặc None",
+        description="Bảng alias cần áp dụng: 'item', 'color' hoặc null",
     )

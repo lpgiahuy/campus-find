@@ -47,18 +47,11 @@ def token_similarity(s1: str, s2: str, mode: Literal["sort", "set"] = "sort") ->
 
 
 def composite_similarity(norm_a: str, norm_b: str) -> tuple[float, FuzzyScoreBreakdown]:
-    """Tính điểm tương đồng kết hợp giữa hai chuỗi đã qua chuẩn hóa.
+    """Tính điểm tương đồng kết hợp giữa hai chuỗi đã qua chuẩn hóa."""
+    s1 = norm_a.strip() if norm_a else ""
+    s2 = norm_b.strip() if norm_b else ""
 
-    Áp dụng Phương án A:
-    - Nếu 1 trong 2 chuỗi rỗng: điểm 0.0.
-    - Nếu hai chuỗi trùng khớp tuyệt đối: điểm 100.0.
-    - Tính Levenshtein ratio (bắt lỗi typo ký tự).
-    - Tính Token Sort ratio (bắt đảo từ).
-    - Tính Token Set ratio có áp dụng hệ số phạt tỷ lệ độ dài (length penalty)
-      để tránh trường hợp từ ngắn vô tình khớp 100% với chuỗi quá dài.
-    - Điểm cuối cùng = max(Levenshtein, max(TokenSort, TokenSet * penalty)).
-    """
-    if not norm_a or not norm_b:
+    if not s1 or not s2:
         breakdown = FuzzyScoreBreakdown(
             levenshtein_ratio=0.0,
             token_sort_ratio=0.0,
@@ -67,7 +60,7 @@ def composite_similarity(norm_a: str, norm_b: str) -> tuple[float, FuzzyScoreBre
         )
         return 0.0, breakdown
 
-    if norm_a == norm_b:
+    if s1 == s2:
         breakdown = FuzzyScoreBreakdown(
             levenshtein_ratio=100.0,
             token_sort_ratio=100.0,
@@ -76,18 +69,22 @@ def composite_similarity(norm_a: str, norm_b: str) -> tuple[float, FuzzyScoreBre
         )
         return 100.0, breakdown
 
-    lev = float(fuzz.ratio(norm_a, norm_b))
-    ts = float(fuzz.token_sort_ratio(norm_a, norm_b))
-    tset = float(fuzz.token_set_ratio(norm_a, norm_b))
+    lev = float(fuzz.ratio(s1, s2))
+    ts = float(fuzz.token_sort_ratio(s1, s2))
+    tset = float(fuzz.token_set_ratio(s1, s2))
 
-    tokens_a = norm_a.split()
-    tokens_b = norm_b.split()
+    tokens_a = s1.split()
+    tokens_b = s2.split()
     min_len = min(len(tokens_a), len(tokens_b))
     max_len = max(len(tokens_a), len(tokens_b))
     length_penalty = min_len / max_len if max_len > 0 else 1.0
 
-    # Phạt độ dài: nếu một bên mô tả ngắn, bên kia quá dài thì giảm bớt token_set_ratio
-    penalized_tset = tset * (0.8 + 0.2 * length_penalty)
+    if min_len == 1 and max_len > 1:
+        penalty = length_penalty**0.5
+    else:
+        penalty = 0.7 + 0.3 * length_penalty
+
+    penalized_tset = tset * penalty
     token_score = max(ts, penalized_tset)
     final_score = max(lev, token_score)
     final_score = min(100.0, max(0.0, final_score))
@@ -106,30 +103,16 @@ def _resolve_alias_table(
 ) -> Mapping[str, str] | None:
     """Chuyển đổi tham số alias table từ chuỗi tên bảng hoặc đối tượng mapping."""
     if isinstance(alias_table, str):
-        table = ALIAS_TABLES.get(alias_table.lower())
+        clean_name = alias_table.strip().lower()
+        if not clean_name:
+            return None
+        table = ALIAS_TABLES.get(clean_name)
         if table is None:
             raise ValueError(
                 f"Bảng alias {alias_table!r} không tồn tại. Chọn 'item' hoặc 'color'."
             )
         return table
     return alias_table
-
-
-def fuzzy_match(
-    text_a: str | None,
-    text_b: str | None,
-    alias_table: Mapping[str, str] | str | None = None,
-) -> float:
-    """So khớp mờ 2 chuỗi tự do (tên đồ / màu) trả về điểm số [0.0, 100.0].
-
-    Chuỗi đầu vào sẽ được tự động normalize và áp dụng bảng alias trước khi tính điểm.
-    """
-    table = _resolve_alias_table(alias_table)
-    norm_a = apply_aliases(text_a, table) if table else normalize(text_a)
-    norm_b = apply_aliases(text_b, table) if table else normalize(text_b)
-
-    score, _ = composite_similarity(norm_a, norm_b)
-    return score
 
 
 def detailed_fuzzy_match(
@@ -149,3 +132,12 @@ def detailed_fuzzy_match(
         normalized_b=norm_b,
         breakdown=breakdown,
     )
+
+
+def fuzzy_match(
+    text_a: str | None,
+    text_b: str | None,
+    alias_table: Mapping[str, str] | str | None = None,
+) -> float:
+    """So khớp mờ 2 chuỗi tự do (tên đồ / màu) trả về điểm số [0.0, 100.0]."""
+    return detailed_fuzzy_match(text_a, text_b, alias_table).score
