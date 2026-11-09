@@ -24,11 +24,11 @@ Tên đồ và màu là **chữ tự do** người dùng gõ. Trước khi so b�
 from app.modules.matching.engine.aliases import COLOR_ALIASES, ITEM_ALIASES, apply_aliases
 from app.modules.matching.engine.normalizer import normalize
 
-name = apply_aliases(normalize(report.item_name), ITEM_ALIASES)
-color = apply_aliases(normalize(report.color), COLOR_ALIASES)  # color None → ""
+name = apply_aliases(report.item_name, ITEM_ALIASES)
+color = apply_aliases(report.color, COLOR_ALIASES)  # color None → ""
 ```
 
-- Luôn gọi `normalize()` **trước** `apply_aliases()` — bảng alias đã ở dạng chuẩn hóa nên chỉ khớp với chuỗi đã chuẩn hóa.
+- `apply_aliases()` tự gọi `normalize()` trước khi thay, nên truyền chuỗi gốc hay chuỗi đã normalize đều ra cùng kết quả.
 - Tên đồ dùng `ITEM_ALIASES`, màu dùng `COLOR_ALIASES`. **Không dùng lẫn** (xem mục 4.2).
 - Chỉ cần tìm kiếm không dấu (vd. #16) thì dùng riêng `normalize()`.
 
@@ -57,6 +57,8 @@ _NON_ALNUM.sub(" ", unidecode(text).lower()).strip()
 
 File: `app/modules/matching/engine/aliases.py`.
 
+Bước 0: `normalize(text)` (idempotent, nên chuỗi đã normalize đi qua không đổi).
+
 ### 4.1 Cách thay
 
 1. Gộp mọi biến thể trong bảng thành **một** regex, sắp **dài trước ngắn sau**, bọc bằng `\b…\b`.
@@ -70,7 +72,7 @@ Nhờ vậy:
 | Cụm dài thắng cụm ngắn | `pin du phong` → `sac du phong` (không bị cắt) |
 | Không thay dây chuyền | Kết quả của lượt thay không bị thay tiếp |
 
-`re` tự cache pattern đã biên dịch theo chuỗi pattern, nên dựng chuỗi regex mỗi lần gọi không tốn đáng kể.
+`re` tự cache pattern đã biên dịch theo chuỗi pattern, nên dựng chuỗi regex mỗi lần gọi không tốn đáng kể: đo được ~18 µs / lần gọi, mỗi lượt match chỉ vài chục cặp → dưới 1 ms. Không biên dịch sẵn lúc import.
 
 ### 4.2 Hai bảng riêng
 

@@ -50,7 +50,8 @@ _COLOR_GROUPS = {
     "xanh duong": ["xanh dương", "xanh biển", "xanh nước biển", "blue"],
     "xanh la": ["xanh lá cây", "green"],
     "xam": ["ghi", "bạc", "gray", "grey", "silver"],
-    "vang": ["yellow"],
+    "vang": ["vàng đồng", "yellow", "gold"],
+    "cam": ["orange"],
     "hong": ["pink"],
     "nau": ["brown"],
     "tim": ["purple"],
@@ -72,8 +73,9 @@ ITEM_ALIASES: dict[str, str] = _build(_ITEM_GROUPS)
 COLOR_ALIASES: dict[str, str] = _build(_COLOR_GROUPS)
 
 
-def apply_aliases(text: str, table: Mapping[str, str]) -> str:
-    """Thay biến thể bằng từ chuẩn. `text` phải đã qua normalize()."""
+def apply_aliases(text: str | None, table: Mapping[str, str]) -> str:
+    """normalize() rồi thay biến thể bằng từ chuẩn; truyền chuỗi gốc hay đã normalize đều được."""
+    text = normalize(text)  # idempotent nên gọi lại trên chuỗi đã normalize vẫn đúng
     if not text or not table:
         return text
     # Cụm dài thử trước: "pin du phong" thắng "sac"; thay một lượt nên không dây chuyền.

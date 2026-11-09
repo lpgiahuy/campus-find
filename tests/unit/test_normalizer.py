@@ -65,12 +65,19 @@ def test_apply_item_aliases(text, expected):
     assert apply_aliases(normalize(text), ITEM_ALIASES) == expected
 
 
+def test_apply_aliases_normalizes_raw_input():
+    assert apply_aliases("Ba lô", ITEM_ALIASES) == "balo"
+    assert apply_aliases(None, COLOR_ALIASES) == ""
+
+
 def test_color_alias_not_applied_to_item_name():
     # "ghi" = xám chỉ đúng với màu; tên đồ phải giữ nguyên.
     assert apply_aliases(normalize("sổ ghi chép"), ITEM_ALIASES) == "so ghi chep"
     assert apply_aliases(normalize("Ghi"), COLOR_ALIASES) == "xam"
     assert apply_aliases(normalize("Xanh nước biển"), COLOR_ALIASES) == "xanh duong"
     assert apply_aliases(normalize("BLACK"), COLOR_ALIASES) == "den"
+    assert apply_aliases("Orange", COLOR_ALIASES) == "cam"
+    assert apply_aliases("Vàng đồng", COLOR_ALIASES) == "vang"
 
 
 @pytest.mark.parametrize("table", [ITEM_ALIASES, COLOR_ALIASES])
