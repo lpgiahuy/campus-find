@@ -1,8 +1,16 @@
 """Reports Pydantic Schemas (Public & Private Schemas)."""
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import AwareDatetime, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
 from app.shared.enums import FoundReportStatus, LostReportStatus
 from app.shared.schemas import BaseSchema
@@ -11,6 +19,24 @@ from app.shared.utils import normalize_vietnamese_text
 NULL_NOT_ALLOWED = "Trường bắt buộc, không được để null"
 # Đồng hồ máy client có thể chạy nhanh hơn server; chọn "vừa xong" không nên bị 422.
 CLOCK_SKEW = timedelta(minutes=5)
+
+
+def _not_null(v):
+    if v is None:
+        raise ValueError(NULL_NOT_ALLOWED)
+    return v
+
+
+def _not_in_future(v: datetime) -> datetime:
+    if v > datetime.now(UTC) + CLOCK_SKEW:
+        raise ValueError("Thời điểm không được ở tương lai")
+    return v
+
+
+# Thời điểm mất / nhặt: có múi giờ, không ở tương lai. Gửi null khi sửa → 422.
+PastDatetime = Annotated[
+    AwareDatetime, BeforeValidator(_not_null), AfterValidator(_not_in_future)
+]
 
 
 class _ReportWrite(BaseSchema):
@@ -31,15 +57,6 @@ class _ReportWrite(BaseSchema):
     def ids_not_null(cls, v: UUID | None) -> UUID:
         if v is None:
             raise ValueError(NULL_NOT_ALLOWED)
-        return v
-
-    @field_validator("lost_at", "found_at", check_fields=False)
-    @classmethod
-    def not_in_future(cls, v: datetime | None) -> datetime:
-        if v is None:
-            raise ValueError(NULL_NOT_ALLOWED)
-        if v > datetime.now(UTC) + CLOCK_SKEW:
-            raise ValueError("Thời điểm không được ở tương lai")
         return v
 
     @field_validator(
@@ -67,11 +84,11 @@ class _ReportCreate(_ReportWrite):
 
 
 class LostReportCreate(_ReportCreate):
-    lost_at: AwareDatetime
+    lost_at: PastDatetime
 
 
 class FoundReportCreate(_ReportCreate):
-    found_at: AwareDatetime
+    found_at: PastDatetime
     storage_note: str | None = Field(default=None, max_length=2000)
 
 
@@ -85,11 +102,12 @@ class _ReportPatch(_ReportWrite):
 
 
 class LostReportPatch(_ReportPatch):
-    lost_at: AwareDatetime | None = None
+    # Cố ý không "| None": mặc định None = không sửa, còn gửi null lên phải 422.
+    lost_at: PastDatetime = None
 
 
 class FoundReportPatch(_ReportPatch):
-    found_at: AwareDatetime | None = None
+    found_at: PastDatetime = None  # như lost_at
     storage_note: str | None = Field(default=None, max_length=2000)
 
 

@@ -6,8 +6,17 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
-from app.core.dependencies import get_current_user, get_service
-from app.core.exceptions import BusinessLogicError, ConflictError, ForbiddenError
+from app.core.dependencies import (
+    get_current_user,
+    get_optional_current_user,
+    get_service,
+)
+from app.core.exceptions import (
+    BusinessLogicError,
+    ConflictError,
+    ForbiddenError,
+    UnauthorizedError,
+)
 from app.db.models import Category, FoundReport, Location, LostReport, User
 from app.db.session import get_db
 from app.main import app
@@ -105,8 +114,10 @@ def as_user(mock_lost_service, mock_found_service):
         lambda: mock_found_service
     )
 
-    def _client(user: User) -> AsyncClient:
+    def _client(user: User | None) -> AsyncClient:
+        """user=None: khách chưa đăng nhập (chỉ dùng cho endpoint xem)."""
         app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_optional_current_user] = lambda: user
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     yield _client
@@ -117,7 +128,7 @@ def as_user(mock_lost_service, mock_found_service):
 
 
 @pytest.mark.parametrize("prefix", ["/api/v1/lost-reports", "/api/v1/found-reports"])
-async def test_all_endpoints_require_login(prefix: str):
+async def test_write_endpoints_require_login(prefix: str):
     app.dependency_overrides[get_db] = dummy_db
     rid = uuid.uuid4()
     async with AsyncClient(
@@ -125,13 +136,23 @@ async def test_all_endpoints_require_login(prefix: str):
     ) as client:
         responses = [
             await client.post(prefix, json={}),
-            await client.get(prefix),
-            await client.get(f"{prefix}/{rid}"),
             await client.patch(f"{prefix}/{rid}", json={}),
             await client.post(f"{prefix}/{rid}/close"),
         ]
     app.dependency_overrides.clear()
-    assert [r.status_code for r in responses] == [401] * 5
+    assert [r.status_code for r in responses] == [401] * 3
+
+
+async def test_guest_can_view_public(as_user, mock_lost_service):
+    report = make_lost(make_user())
+    mock_lost_service.get.return_value = report
+    mock_lost_service.list.return_value = ([report], 1)
+    async with as_user(None) as client:
+        detail = await client.get(f"/api/v1/lost-reports/{report.id}")
+        listing = await client.get("/api/v1/lost-reports")
+    assert detail.status_code == listing.status_code == 200
+    assert "private_identifiers" not in detail.json()["data"]
+    assert "private_identifiers" not in listing.json()["data"]["items"][0]
 
 
 # ---------- Validation (422) ----------
@@ -246,15 +267,17 @@ async def test_found_detail_hides_storage_note_from_others(
     assert "private_identifiers" not in data
 
 
-async def test_list_is_public_and_paginated(as_user, mock_lost_service):
+async def test_list_private_only_for_own_items(as_user, mock_lost_service):
     owner = make_user()
-    mock_lost_service.list.return_value = ([make_lost(owner)], 21)
+    mine, other = make_lost(owner), make_lost(make_user())
+    mock_lost_service.list.return_value = ([mine, other], 21)
     async with as_user(owner) as client:
         response = await client.get("/api/v1/lost-reports?page=2&page_size=10&mine=true")
     data = response.json()["data"]
     assert response.status_code == 200
     assert data["total_pages"] == 3
-    assert "private_identifiers" not in data["items"][0]
+    assert data["items"][0]["private_identifiers"] == "Thẻ SV tên Nguyễn Văn A"
+    assert "private_identifiers" not in data["items"][1]
     kwargs = mock_lost_service.list.call_args.kwargs
     assert kwargs["mine"] is True
     assert kwargs["offset"] == 10
@@ -291,6 +314,10 @@ async def test_service_list_defaults_to_open_unless_mine():
     await service.list(user, mine=True)
     assert service.reports.list_reports.call_args.kwargs["status"] is None
     assert service.reports.list_reports.call_args.kwargs["user_id"] == user.id
+
+    await service.list(None)  # khách xem tin OPEN
+    with pytest.raises(UnauthorizedError):
+        await service.list(None, mine=True)
 
 
 async def test_service_create_rejects_inactive_category():

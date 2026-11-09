@@ -3,33 +3,33 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import ensure_owner_or_admin
 from app.core.exceptions import (
     BusinessLogicError,
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    UnauthorizedError,
 )
 from app.db.models import FoundReport, LostReport, User
 from app.modules.catalog.repository import CategoryRepository, LocationRepository
 from app.modules.reports.repository import Report, ReportRepository
-from app.shared.enums import UserRole
+from app.shared.enums import FoundReportStatus, LostReportStatus, UserRole
 from app.shared.schemas import BaseSchema
 from app.shared.service import BaseService
 
-OPEN = "OPEN"
-CLOSED = "CLOSED"
 
-
-def can_view_private(user: User, report: Report) -> bool:
-    """Chỉ chủ tin hoặc ADMIN được xem private_identifiers / storage_note."""
-    return user.role == UserRole.ADMIN or user.id == report.user_id
+def is_owner_or_admin(user: User | None, report: Report) -> bool:
+    """Chủ tin hoặc ADMIN: được xem private_identifiers / storage_note và đóng tin."""
+    return user is not None and (
+        user.role == UserRole.ADMIN or user.id == report.user_id
+    )
 
 
 class ReportService(BaseService):
     """Logic dùng chung cho tin mất / tin nhặt; lớp con chỉ khai báo model."""
 
     model: type[Report]
+    status_enum: type[LostReportStatus | FoundReportStatus]
     time_field: str
     label: str
 
@@ -48,7 +48,7 @@ class ReportService(BaseService):
 
     async def list(
         self,
-        user: User,
+        user: User | None,
         mine: bool = False,
         status: str | None = None,
         category_id: UUID | None = None,
@@ -56,9 +56,11 @@ class ReportService(BaseService):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[Report], int]:
+        if mine and user is None:
+            raise UnauthorizedError()
         # Mặc định chỉ tin OPEN; "tin của tôi" thì mọi trạng thái nếu không lọc status.
         if status is None and not mine:
-            status = OPEN
+            status = self.status_enum.OPEN
         return await self.reports.list_reports(
             status=status,
             category_id=category_id,
@@ -85,8 +87,8 @@ class ReportService(BaseService):
         changes = data.model_dump(exclude_unset=True)
         # Chỉ kiểm tra khi đổi sang giá trị mới: giữ nguyên danh mục đã ngừng dùng vẫn sửa được.
         await self._ensure_active_catalog(
-            self._changed(report, changes, "category_id"),
-            self._changed(report, changes, "location_id"),
+            self._new_value_if_changed(report, changes, "category_id"),
+            self._new_value_if_changed(report, changes, "location_id"),
         )
         for field, value in changes.items():
             setattr(report, field, value)
@@ -96,20 +98,23 @@ class ReportService(BaseService):
 
     async def close(self, report_id: UUID, user: User) -> Report:
         report = await self.get(report_id, for_update=True)
-        ensure_owner_or_admin(user, report.user_id)
+        if not is_owner_or_admin(user, report):
+            raise ForbiddenError()
         self._ensure_open(report)
-        report.status = CLOSED
+        report.status = self.status_enum.CLOSED
         await self.db.flush()
         await self.db.refresh(report)
         return report
 
     @staticmethod
-    def _changed(report: Report, changes: dict, field: str) -> UUID | None:
+    def _new_value_if_changed(
+        report: Report, changes: dict, field: str
+    ) -> UUID | None:
         value = changes.get(field)
         return value if value != getattr(report, field) else None
 
     def _ensure_open(self, report: Report) -> None:
-        if report.status != OPEN:
+        if report.status != self.status_enum.OPEN:
             raise ConflictError(f"{self.label} không còn mở, không thể thay đổi")
 
     async def _ensure_active_catalog(
@@ -127,11 +132,13 @@ class ReportService(BaseService):
 
 class LostReportService(ReportService):
     model = LostReport
+    status_enum = LostReportStatus
     time_field = "lost_at"
     label = "Tin mất đồ"
 
 
 class FoundReportService(ReportService):
     model = FoundReport
+    status_enum = FoundReportStatus
     time_field = "found_at"
     label = "Tin nhặt được đồ"

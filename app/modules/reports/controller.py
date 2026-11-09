@@ -5,7 +5,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.dependencies import get_current_user, get_pagination, get_service
+from app.core.dependencies import (
+    get_current_user,
+    get_optional_current_user,
+    get_pagination,
+    get_service,
+)
 from app.db.models import User
 from app.modules.reports.schemas import (
     FoundReportCreate,
@@ -21,7 +26,7 @@ from app.modules.reports.service import (
     FoundReportService,
     LostReportService,
     ReportService,
-    can_view_private,
+    is_owner_or_admin,
 )
 from app.shared.enums import FoundReportStatus, LostReportStatus
 from app.shared.schemas import (
@@ -50,6 +55,14 @@ def build_report_router(
     label = service_cls.label
     Service = Annotated[service_cls, Depends(get_service(service_cls))]
     CurrentUser = Annotated[User, Depends(get_current_user)]
+    # Xem danh sách / chi tiết không cần đăng nhập; token sai coi như khách.
+    OptionalUser = Annotated[User | None, Depends(get_optional_current_user)]
+    # Dữ liệu công khai thiếu field riêng tư (không có default) nên chỉ khớp Public.
+    ReadSchema = private_schema | public_schema
+
+    def to_read(user: User | None, report):
+        schema = private_schema if is_owner_or_admin(user, report) else public_schema
+        return schema.model_validate(report)
 
     @router.post(
         "",
@@ -66,12 +79,12 @@ def build_report_router(
 
     @router.get(
         "",
-        response_model=PaginatedResponse[public_schema],
-        summary=f"Danh sách {label.lower()} (dạng công khai)",
+        response_model=PaginatedResponse[ReadSchema],
+        summary=f"Danh sách {label.lower()} (riêng tư với tin của mình / ADMIN)",
     )
     async def list_reports(
         pagination: Annotated[PaginationParams, Depends(get_pagination)],
-        user: CurrentUser,
+        user: OptionalUser,
         service: Service,
         status: Annotated[
             status_enum | None,
@@ -79,7 +92,9 @@ def build_report_router(
         ] = None,
         category_id: Annotated[UUID | None, Query()] = None,
         location_id: Annotated[UUID | None, Query()] = None,
-        mine: Annotated[bool, Query(description="Chỉ tin của tôi")] = False,
+        mine: Annotated[
+            bool, Query(description="Chỉ tin của tôi (cần đăng nhập)")
+        ] = False,
     ):
         items, total = await service.list(
             user,
@@ -92,7 +107,7 @@ def build_report_router(
         )
         return PaginatedResponse(
             data=PaginatedData(
-                items=[public_schema.model_validate(item) for item in items],
+                items=[to_read(user, item) for item in items],
                 total=total,
                 page=pagination.page,
                 page_size=pagination.page_size,
@@ -102,14 +117,11 @@ def build_report_router(
 
     @router.get(
         "/{id}",
-        # Dữ liệu công khai thiếu field riêng tư (không có default) nên chỉ khớp Public.
-        response_model=ApiResponse[private_schema | public_schema],
+        response_model=ApiResponse[ReadSchema],
         summary=f"Xem chi tiết {label.lower()} (riêng tư nếu là chủ tin / ADMIN)",
     )
-    async def get_report(id: UUID, user: CurrentUser, service: Service):
-        report = await service.get(id)
-        schema = private_schema if can_view_private(user, report) else public_schema
-        return ApiResponse(data=schema.model_validate(report))
+    async def get_report(id: UUID, user: OptionalUser, service: Service):
+        return ApiResponse(data=to_read(user, await service.get(id)))
 
     @router.patch(
         "/{id}",
