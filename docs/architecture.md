@@ -67,6 +67,7 @@ flowchart TD
 4.  **Matching Engine (`app/modules/matching/engine/`)**:
     *   `normalizer.py`: `normalize()` bỏ dấu, chữ thường, chỉ giữ `a-z0-9`, gộp khoảng trắng — chỉ dùng khi so khớp. Chi tiết: [matching-normalizer.md](matching-normalizer.md).
     *   `aliases.py`: Bảng từ đồng nghĩa tên đồ / màu (balo / ba lô, tai nghe / airpods, đen / black…) và `apply_aliases()`.
+    *   `fuzzy.py`: So khớp mờ ký tự & token qua Levenshtein / Token Similarity (rapidfuzz), xử lý lỗi chính tả và biến thể thứ tự từ. Chi tiết: [matching-fuzzy.md](matching-fuzzy.md).
     *   `scorer.py` (chưa triển khai): Tính điểm tương đồng có trọng số \(S = 100(0.35N + 0.25C + 0.15K + 0.15L + 0.10T)\) và trả về `score_breakdown` giải thích nguyên nhân.
 
 ---
@@ -103,6 +104,7 @@ IE221 - UIT CampusFind/
 │   │   ├── matching/               # Đối soát tin trùng khớp & thông báo (matches)
 │   │   │   ├── engine/
 │   │   │   │   ├── aliases.py      # Khung từ đồng nghĩa tiếng Việt
+│   │   │   │   ├── fuzzy.py        # So khớp mờ (Levenshtein & Token Similarity)
 │   │   │   │   ├── normalizer.py   # Khung chuẩn hóa Unicode
 │   │   │   │   └── scorer.py       # Khung tính điểm
 │   │   │   ├── repository.py | controller.py | schemas.py | service.py
