@@ -69,31 +69,29 @@ def composite_similarity(norm_a: str, norm_b: str) -> tuple[float, FuzzyScoreBre
         )
         return 100.0, breakdown
 
-    lev = float(fuzz.ratio(s1, s2))
-    ts = float(fuzz.token_sort_ratio(s1, s2))
-    tset = float(fuzz.token_set_ratio(s1, s2))
+    lev = levenshtein_similarity(s1, s2)
+    ts = token_similarity(s1, s2, mode="sort")
+    tset = token_similarity(s1, s2, mode="set")
 
     tokens_a = s1.split()
     tokens_b = s2.split()
     min_len = min(len(tokens_a), len(tokens_b))
     max_len = max(len(tokens_a), len(tokens_b))
-    length_penalty = min_len / max_len if max_len > 0 else 1.0
+    raw_ratio = min_len / max_len
 
     if min_len == 1 and max_len > 1:
-        penalty = length_penalty**0.5
+        penalty = raw_ratio**0.5
     else:
-        penalty = 0.7 + 0.3 * length_penalty
+        penalty = 0.7 + 0.3 * raw_ratio
 
     penalized_tset = tset * penalty
-    token_score = max(ts, penalized_tset)
-    final_score = max(lev, token_score)
-    final_score = min(100.0, max(0.0, final_score))
+    final_score = max(lev, ts, penalized_tset)
 
     breakdown = FuzzyScoreBreakdown(
-        levenshtein_ratio=round(lev, 2),
-        token_sort_ratio=round(ts, 2),
-        token_set_ratio=round(tset, 2),
-        length_penalty=round(length_penalty, 2),
+        levenshtein_ratio=lev,
+        token_sort_ratio=ts,
+        token_set_ratio=tset,
+        length_penalty=round(penalty, 2),
     )
     return round(final_score, 2), breakdown
 

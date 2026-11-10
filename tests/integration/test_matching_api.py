@@ -72,3 +72,30 @@ async def test_matching_similarity_invalid_alias_type_returns_422(client: AsyncC
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_similarity_input_too_long_returns_422(client: AsyncClient):
+    """Chuỗi đầu vào vượt quá max_length=500 trả về 422, bảo vệ event loop khỏi DoS."""
+    too_long = "a" * 501
+    response_a = await client.post(
+        "/api/v1/matching/similarity",
+        json={"text_a": too_long, "text_b": "bluetooth"},
+    )
+    assert response_a.status_code == 422
+
+    response_b = await client.post(
+        "/api/v1/matching/similarity",
+        json={"text_a": "bluetooth", "text_b": too_long},
+    )
+    assert response_b.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_similarity_empty_input_returns_422(client: AsyncClient):
+    """Chuỗi rỗng vi phạm min_length=1 trả về 422."""
+    response = await client.post(
+        "/api/v1/matching/similarity",
+        json={"text_a": "", "text_b": "bluetooth"},
+    )
+    assert response.status_code == 422

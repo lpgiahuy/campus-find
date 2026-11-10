@@ -28,7 +28,7 @@ class FuzzyScoreBreakdown(BaseSchema):
     length_penalty: float = Field(
         ge=0.0,
         le=1.0,
-        description="Hệ số phạt chênh lệch số lượng token giữa hai chuỗi",
+        description="Hệ số phạt độ dài thực tế áp dụng cho token set ratio",
     )
 
 
@@ -55,9 +55,13 @@ class FuzzyCheckRequest(BaseSchema):
     """Schema request kiểm tra độ tương đồng giữa hai chuỗi."""
 
     text_a: str = Field(
+        min_length=1,
+        max_length=500,
         description="Chuỗi văn bản thứ nhất (ví dụ: tên đồ người mất)",
     )
     text_b: str = Field(
+        min_length=1,
+        max_length=500,
         description="Chuỗi văn bản thứ hai (ví dụ: tên đồ người nhặt)",
     )
     alias_type: Literal["item", "color"] | None = Field(

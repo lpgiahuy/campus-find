@@ -18,7 +18,7 @@ router = APIRouter(prefix="/matching", tags=["Matching"])
         "tự động chuẩn hóa dấu tiếng Việt và thay thế từ đồng nghĩa."
     ),
 )
-async def check_similarity(
+def check_similarity(
     payload: FuzzyCheckRequest,
 ) -> ApiResponse[FuzzySimilarityResult]:
     """Endpoint thử nghiệm độ tương đồng giữa hai chuỗi văn bản."""

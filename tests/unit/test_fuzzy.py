@@ -61,21 +61,21 @@ def test_fuzzy_match_word_reordering(str_a: str, str_b: str):
 
 
 @pytest.mark.parametrize(
-    ("short_desc", "long_desc", "min_score", "max_score"),
+    ("short_desc", "long_desc", "expected_score"),
     [
-        ("ví da", "ví da bò", 90.0, 100.0),
-        ("ví da", "ví da bò nâu", 85.0, 100.0),
-        ("tai nghe bluetooth", "tai nghe bluetooth sony", 85.0, 100.0),
-        ("balo laptop", "balo laptop lenovo thinkpad chống nước", 75.0, 95.0),
-        ("iphone 13", "iphone 13 pro max", 85.0, 100.0),
+        ("ví da", "ví da bò", 90.0),
+        ("ví da", "ví da bò nâu", 85.0),
+        ("tai nghe bluetooth", "tai nghe bluetooth sony", 92.5),
+        ("balo laptop", "balo laptop lenovo thinkpad chống nước", 80.0),
+        ("iphone 13", "iphone 13 pro max", 85.0),
     ],
 )
 def test_fuzzy_match_subset_and_expanded_descriptions(
-    short_desc: str, long_desc: str, min_score: float, max_score: float
+    short_desc: str, long_desc: str, expected_score: float
 ):
     score = fuzzy_match(short_desc, long_desc)
-    assert min_score <= score <= max_score, (
-        f"{short_desc!r} vs {long_desc!r}: điểm {score} ngoài [{min_score}, {max_score}]"
+    assert score == pytest.approx(expected_score, abs=0.01), (
+        f"{short_desc!r} vs {long_desc!r}: điểm {score} khác kỳ vọng {expected_score}"
     )
 
 
@@ -167,6 +167,19 @@ def test_detailed_fuzzy_match_structure():
     assert result.breakdown.token_sort_ratio > 0
     assert result.breakdown.token_set_ratio > 0
     assert 0.0 <= result.breakdown.length_penalty <= 1.0
+
+
+def test_detailed_fuzzy_match_length_penalty_applied():
+    """Kiểm tra breakdown.length_penalty là hệ số phạt thực tế áp dụng vào token set ratio."""
+    result = detailed_fuzzy_match("ví da", "ví da bò", alias_table="item")
+    assert result.score == 90.0
+    assert result.breakdown.token_set_ratio == 100.0
+    # min_len=2, max_len=3 -> penalty = 0.7 + 0.3 * (2/3) = 0.9
+    assert result.breakdown.length_penalty == pytest.approx(0.9, abs=0.01)
+
+    result_single = detailed_fuzzy_match("xanh", "xanh duong", alias_table="color")
+    # min_len=1, max_len=2 -> penalty = (1/2)**0.5 ≈ 0.71
+    assert result_single.breakdown.length_penalty == pytest.approx(0.71, abs=0.01)
 
 
 def test_individual_metrics():

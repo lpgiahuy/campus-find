@@ -35,11 +35,11 @@ color_score = fuzzy_match("BLACK", "đen", alias_table="color")
 
 # 3. Lấy giải trình chi tiết (phục vụ score_breakdown cho Task #11)
 result = detailed_fuzzy_match("ví da", "ví da bò", alias_table="item")
-print(result.score)  # 93.33
+print(result.score)  # 90.0
 print(result.breakdown.levenshtein_ratio)  # 76.92
 print(result.breakdown.token_sort_ratio)  # 76.92
 print(result.breakdown.token_set_ratio)  # 100.0
-print(result.breakdown.length_penalty)  # 0.67
+print(result.breakdown.length_penalty)  # 0.9
 ```
 
 ## 3. Thuật toán kết hợp (Phương án A - Composite Strategy)
@@ -56,13 +56,15 @@ File: `app/modules/matching/engine/fuzzy.py`.
 ### 3.2. Công thức phạt độ dài (Length Penalty)
 Nếu chỉ dùng `token_set_ratio`, một từ ngắn (ví dụ `tai nghe`) sẽ khớp 100% với chuỗi dài bất kỳ có chứa nó (như `tai nghe bluetooth sony wh-1000xm4`). Vì vậy hệ thống áp dụng hệ số phạt tỷ lệ độ dài:
 
-$$\text{length\_penalty} = \frac{\min(\text{len}(T_A), \text{len}(T_B))}{\max(\text{len}(T_A), \text{len}(T_B))}$$
+$$\text{token\_ratio} = \frac{\min(\text{len}(T_A), \text{len}(T_B))}{\max(\text{len}(T_A), \text{len}(T_B))}$$
 
-$$\text{penalty} = \begin{cases} \text{length\_penalty}^{0.5} & \text{khi } \min(\text{len}) = 1 \text{ và } \max(\text{len}) > 1 \\ 0.7 + 0.3 \times \text{length\_penalty} & \text{ngược lại} \end{cases}$$
+$$\text{length\_penalty} = \begin{cases} \text{token\_ratio}^{0.5} & \text{khi } \min(\text{len}) = 1 \text{ và } \max(\text{len}) > 1 \\ 0.7 + 0.3 \times \text{token\_ratio} & \text{ngược lại} \end{cases}$$
 
-$$\text{penalized\_token\_set} = \text{token\_set\_ratio} \times \text{penalty}$$
+$$\text{penalized\_token\_set} = \text{token\_set\_ratio} \times \text{length\_penalty}$$
 
-$$\text{final\_score} = \max(\text{Levenshtein}, \max(\text{TokenSort}, \text{penalized\_token\_set}))$$
+$$\text{final\_score} = \max(\text{Levenshtein}, \text{TokenSort}, \text{penalized\_token\_set})$$
+
+*Lưu ý:* `breakdown.length_penalty` trả về chính xác hệ số $\text{length\_penalty}$ thực tế được nhân vào `token_set_ratio` (thay vì tỷ lệ thô), giúp giải trình (`score_breakdown`) ở Task #11 hoàn toàn minh bạch.
 
 ### 3.3. Bảng kết quả thực nghiệm
 
@@ -73,8 +75,8 @@ $$\text{final\_score} = \max(\text{Levenshtein}, \max(\text{TokenSort}, \text{pe
 | `tai nge` | `tai nghe` | **93.33** | Bắt lỗi chính tả `nge` -> `nghe` |
 | `bal0` | `balo` | **75.0** | Bắt lỗi gõ nhầm số 0 thay chữ o |
 | `tai nghe bluetooth` | `bluetooth tai nghe` | **100.0** | Token Sort xử lý trật tự từ |
-| `ví da` | `ví da bò` | **93.33** | Token Set xử lý mô tả chi tiết hơn |
-| `ví da` | `ví da bò nâu` | **90.0** | Token Set kèm phạt độ dài |
+| `ví da` | `ví da bò` | **90.0** | Token Set xử lý mô tả chi tiết hơn |
+| `ví da` | `ví da bò nâu` | **85.0** | Token Set kèm phạt độ dài |
 | `tai nghe` | `balo laptop` | **21.05** | Hai đồ khác loại có điểm rất thấp |
 
 ## 4. REST API Endpoint
@@ -82,7 +84,7 @@ $$\text{final\_score} = \max(\text{Levenshtein}, \max(\text{TokenSort}, \text{pe
 Router: `app/modules/matching/controller.py` (đã đăng ký vào `/api/v1/matching`).
 
 - **Method / Path:** `POST /api/v1/matching/similarity`
-- **Request Body (`FuzzyCheckRequest`):**
+- **Request Body (`FuzzyCheckRequest`):** Giới hạn `min_length=1`, `max_length=500` bảo vệ event loop khỏi CPU exhaustion / DoS. Handler đồng bộ chạy trên threadpool riêng qua FastAPI `def` endpoint.
   ```json
   {
     "text_a": "bluetoth",
@@ -111,8 +113,8 @@ Router: `app/modules/matching/controller.py` (đã đăng ký vào `/api/v1/matc
 
 ## 5. Kiểm thử
 
-- Unit tests: `tests/unit/test_fuzzy.py` (47 tests).
-- Integration tests: `tests/integration/test_matching_api.py` (3 tests).
+- Unit tests: `tests/unit/test_fuzzy.py` (50 tests).
+- Integration tests: `tests/integration/test_matching_api.py` (6 tests).
 
 Chạy kiểm thử:
 ```bash
