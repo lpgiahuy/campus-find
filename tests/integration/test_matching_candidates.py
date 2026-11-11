@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.db.base import Base
 from app.db.models import Category, FoundReport, Location, LostReport, User
+from app.modules.matching import repository as matching_repository
 from app.modules.matching.repository import MatchingRepository
+from app.shared.enums import FoundReportStatus, LostReportStatus
 
 TEST_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -21,9 +23,20 @@ pytestmark = pytest.mark.skipif(
 
 T = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 
+# (model, cột thời gian, trạng thái mở, trạng thái đã xong)
+LOST = (LostReport, "lost_at", LostReportStatus.OPEN, LostReportStatus.RESOLVED)
+FOUND = (FoundReport, "found_at", FoundReportStatus.OPEN, FoundReportStatus.RETURNED)
+DIRECTIONS = {
+    "lost_to_found": (LOST, FOUND, "find_found_candidates"),
+    "found_to_lost": (FOUND, LOST, "find_lost_candidates"),
+}
 
-@pytest.fixture
-async def seeded():
+
+@pytest.fixture(params=DIRECTIONS.values(), ids=DIRECTIONS.keys())
+async def seeded(request):
+    (src_model, src_time, src_open, _), (cand_model, cand_time, cand_open, cand_done), method = (
+        request.param
+    )
     engine = create_async_engine(TEST_URL)
     async with engine.connect() as conn:
         trans = await conn.begin()
@@ -39,46 +52,41 @@ async def seeded():
             session.add_all([user_a, user_b, cat_x, cat_y, loc])
             await session.flush()
 
-            def found(owner, cat, at, status="OPEN"):
-                return FoundReport(
-                    id=uuid.uuid4(), user_id=owner.id, category_id=cat.id,
-                    location_id=loc.id, item_name="ví", found_at=at, status=status,
+            def report(model, time_field, owner, cat, at, status):
+                return model(
+                    id=uuid.uuid4(), user_id=owner.id, category_id=cat.id, location_id=loc.id,
+                    item_name="ví", status=status, **{time_field: at},
                 )
 
-            lost = LostReport(
-                id=uuid.uuid4(), user_id=user_a.id, category_id=cat_x.id,
-                location_id=loc.id, item_name="ví", lost_at=T,
-            )
+            def candidate(owner, cat, at, status=cand_open):
+                return report(cand_model, cand_time, owner, cat, at, status)
+
+            source = report(src_model, src_time, user_a, cat_x, T, src_open)
             cases = {
-                "near": found(user_b, cat_x, T + timedelta(days=1)),
-                "edge": found(user_b, cat_x, T - timedelta(days=14)),
-                "too_late": found(user_b, cat_x, T + timedelta(days=15)),
-                "other_category": found(user_b, cat_y, T),
-                "returned": found(user_b, cat_x, T, status="RETURNED"),
-                "same_owner": found(user_a, cat_x, T),
+                "near": candidate(user_b, cat_x, T + timedelta(days=1)),
+                "edge": candidate(user_b, cat_x, T - timedelta(days=14)),
+                "too_late": candidate(user_b, cat_x, T + timedelta(days=15)),
+                "other_category": candidate(user_b, cat_y, T),
+                "done": candidate(user_b, cat_x, T, status=cand_done),
+                "same_owner": candidate(user_a, cat_x, T),
             }
-            session.add_all([lost, *cases.values()])
+            session.add_all([source, *cases.values()])
             await session.flush()
-            yield MatchingRepository(session), lost, cases
+            yield getattr(MatchingRepository(session), method), source, cases
             await session.close()
         finally:
             await trans.rollback()
     await engine.dispose()
 
 
-async def test_found_candidates_filter_and_order(seeded):
-    repo, lost, cases = seeded
-    result = await repo.find_found_candidates(lost)
+async def test_candidates_filter_and_order(seeded):
+    find, source, cases = seeded
+    result = await find(source)
     assert [r.id for r in result] == [cases["near"].id, cases["edge"].id]
 
 
-async def test_found_candidates_limit(seeded):
-    repo, lost, cases = seeded
-    result = await repo.find_found_candidates(lost, limit=1)
+async def test_candidates_limit(seeded, monkeypatch):
+    find, source, cases = seeded
+    monkeypatch.setattr(matching_repository, "CANDIDATE_LIMIT", 1)
+    result = await find(source)
     assert [r.id for r in result] == [cases["near"].id]
-
-
-async def test_lost_candidates_reverse_direction(seeded):
-    repo, lost, cases = seeded
-    result = await repo.find_lost_candidates(cases["near"])
-    assert [r.id for r in result] == [lost.id]
