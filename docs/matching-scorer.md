@@ -87,7 +87,7 @@ class MatchLevel(StrEnum):
 
 ## 5. Hướng dẫn sử dụng trong Python
 
-### 5.1. Dùng trực tiếp hàm `calculate_match_score`
+### 5.1. Dùng hàm `calculate_match_score`
 
 ```python
 from datetime import datetime, timezone, timedelta
@@ -115,15 +115,6 @@ print(result.total_score)  # 96.5
 print(result.level)        # MatchLevel.HIGH
 for reason in result.reasons:
     print("-", reason)
-```
-
-### 5.2. Sử dụng theo mẫu thiết kế Strategy (`WeightedMatchScorer`)
-
-```python
-from app.modules.matching.engine.scorer import WeightedMatchScorer
-
-scorer = WeightedMatchScorer()
-result = scorer.score(lost_report_orm_instance, found_report_orm_instance)
 ```
 
 ---

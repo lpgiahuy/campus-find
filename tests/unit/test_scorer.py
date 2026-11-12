@@ -9,6 +9,7 @@ from app.modules.matching.engine.scorer import (
     COLOR_NEUTRAL_SCORE,
     LOCATION_NEUTRAL_SCORE,
     MAX_TIME_DIFF_DAYS,
+    NAME_MIN_SCORE,
     THRESHOLD_HIGH,
     THRESHOLD_MEDIUM,
     TIME_NEUTRAL_SCORE,
@@ -17,7 +18,6 @@ from app.modules.matching.engine.scorer import (
     WEIGHT_LOCATION,
     WEIGHT_NAME,
     WEIGHT_TIME,
-    WeightedMatchScorer,
     calculate_match_score,
     get_match_level,
     score_category,
@@ -111,6 +111,12 @@ def test_score_category_different_id():
     assert details["matched"] is False
 
 
+def test_score_category_id_vs_name_only_lacks_info():
+    score, reason, _ = score_category(uuid4(), None, None, "Điện tử")
+    assert score == 0.0
+    assert "Không đủ thông tin" in reason
+
+
 def test_score_category_name_only():
     score, reason, _ = score_category(None, None, "Điện tử", "điện tử")
     assert score == 100.0
@@ -166,6 +172,18 @@ def test_score_location_different_id():
     assert details["matched"] is False
 
 
+def test_score_location_different_id_same_name():
+    score, _, details = score_location(uuid4(), uuid4(), "Thư viện", "Thư viện")
+    assert score == 0.0
+    assert details["matched"] is False
+
+
+def test_score_location_id_vs_name_only_is_neutral():
+    score, _, details = score_location(uuid4(), None, None, "Thư viện")
+    assert score == LOCATION_NEUTRAL_SCORE
+    assert details["neutral"] is True
+
+
 def test_score_location_name_fuzzy():
     score, reason, _ = score_location(None, None, "Tòa A", "Khu Tòa A")
     assert score >= 80.0
@@ -183,7 +201,7 @@ def test_score_time_exact():
     now = datetime.now(UTC)
     score, reason, _ = score_time(now, now)
     assert score == 100.0
-    assert "gần như cùng lúc" in reason or "trùng khớp" in reason
+    assert "cách nhau 0.0 ngày" in reason
 
 
 def test_score_time_within_one_day():
@@ -356,13 +374,41 @@ def test_calculate_match_score_with_orm_models():
         found_at=now + timedelta(hours=2),
     )
 
-    scorer = WeightedMatchScorer()
-    result = scorer.score(lost_model, found_model)
+    result = calculate_match_score(lost_model, found_model)
 
     assert result.total_score >= 80.0
     assert result.level == MatchLevel.HIGH
     assert result.breakdown.category.score == 100.0
     assert result.breakdown.location.score == 100.0
+
+
+@pytest.mark.parametrize(
+    ("lost_name", "found_name"),
+    [("Ví da", "Chuột máy tính"), ("Ví da", "Áo khoác")],
+)
+def test_dissimilar_names_are_forced_low(lost_name: str, found_name: str):
+    now = datetime.now(UTC)
+    cat_id = uuid4()
+    loc_id = uuid4()
+    lost = {
+        "item_name": lost_name,
+        "category_id": cat_id,
+        "color": "đen",
+        "location_id": loc_id,
+        "timestamp": now,
+    }
+    found = {
+        "item_name": found_name,
+        "category_id": cat_id,
+        "color": "đen",
+        "location_id": loc_id,
+        "timestamp": now + timedelta(hours=3),
+    }
+
+    result = calculate_match_score(lost, found)
+
+    assert result.breakdown.name.score < NAME_MIN_SCORE
+    assert result.level == MatchLevel.LOW
 
 
 def test_score_clamping_guarantees_0_to_100():

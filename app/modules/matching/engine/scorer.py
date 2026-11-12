@@ -22,6 +22,7 @@ WEIGHT_TIME = 0.10
 THRESHOLD_HIGH = 80.0
 THRESHOLD_MEDIUM = 60.0
 MAX_TIME_DIFF_DAYS = 14.0
+NAME_MIN_SCORE = 50.0
 
 COLOR_NEUTRAL_SCORE = 50.0
 LOCATION_NEUTRAL_SCORE = 50.0
@@ -74,11 +75,17 @@ def score_category(
     cat_name_a: str | None = None,
     cat_name_b: str | None = None,
 ) -> tuple[float, str, dict[str, Any]]:
-    if cat_id_a and cat_id_b and str(cat_id_a).strip() == str(cat_id_b).strip():
-        return 100.0, f"Cùng danh mục ({cat_name_a or cat_id_a})", {"matched": True}
-    if cat_name_a and cat_name_b and normalize(cat_name_a) == normalize(cat_name_b):
-        return 100.0, f"Cùng tên danh mục ('{cat_name_a}')", {"matched": True}
-    if cat_id_a or cat_id_b or cat_name_a or cat_name_b:
+    if cat_id_a and cat_id_b:
+        if str(cat_id_a).strip() == str(cat_id_b).strip():
+            return (
+                100.0,
+                f"Cùng danh mục ({cat_name_a or cat_id_a})",
+                {"matched": True},
+            )
+        return 0.0, "Khác danh mục tài sản", {"matched": False}
+    if cat_name_a and cat_name_b:
+        if normalize(cat_name_a) == normalize(cat_name_b):
+            return 100.0, f"Cùng tên danh mục ('{cat_name_a}')", {"matched": True}
         return 0.0, "Khác danh mục tài sản", {"matched": False}
     return 0.0, "Không đủ thông tin danh mục", {"matched": False}
 
@@ -111,8 +118,14 @@ def score_location(
     loc_name_a: str | None = None,
     loc_name_b: str | None = None,
 ) -> tuple[float, str, dict[str, Any]]:
-    if loc_id_a and loc_id_b and str(loc_id_a).strip() == str(loc_id_b).strip():
-        return 100.0, f"Cùng địa điểm ({loc_name_a or loc_id_a})", {"matched": True}
+    if loc_id_a and loc_id_b:
+        if str(loc_id_a).strip() == str(loc_id_b).strip():
+            return (
+                100.0,
+                f"Cùng địa điểm ({loc_name_a or loc_id_a})",
+                {"matched": True},
+            )
+        return 0.0, "Khác địa điểm thất lạc và nhặt được", {"matched": False}
     if loc_name_a and loc_name_b:
         score = detailed_fuzzy_match(loc_name_a, loc_name_b).score
         if score >= 80.0:
@@ -126,13 +139,11 @@ def score_location(
             f"Khác địa điểm ('{loc_name_a}' vs '{loc_name_b}')",
             {"matched": False},
         )
-    if not (loc_id_a or loc_name_a) or not (loc_id_b or loc_name_b):
-        return (
-            LOCATION_NEUTRAL_SCORE,
-            "Thiếu địa điểm (điểm trung tính 50%)",
-            {"neutral": True},
-        )
-    return 0.0, "Khác địa điểm thất lạc và nhặt được", {"matched": False}
+    return (
+        LOCATION_NEUTRAL_SCORE,
+        "Thiếu địa điểm (điểm trung tính 50%)",
+        {"neutral": True},
+    )
 
 
 def score_time(
@@ -150,12 +161,6 @@ def score_time(
     diff_sec = abs((t_b - t_a).total_seconds())
     diff_days = diff_sec / 86400.0
 
-    if diff_sec < 60:
-        return (
-            100.0,
-            "Thời gian xảy ra gần như cùng lúc",
-            {"diff_seconds": diff_sec, "diff_days": 0.0},
-        )
     if diff_days <= MAX_TIME_DIFF_DAYS:
         score = round(100.0 * (1.0 - diff_days / MAX_TIME_DIFF_DAYS), 2)
         return (
@@ -171,93 +176,64 @@ def score_time(
 
 
 def calculate_match_score(lost: Any, found: Any) -> MatchScoreResult:
-    s_name, r_name, d_name = score_name(
-        _extract_val(lost, "item_name"), _extract_val(found, "item_name")
-    )
-    s_cat, r_cat, d_cat = score_category(
-        _extract_val(lost, "category_id"),
-        _extract_val(found, "category_id"),
-        _extract_val(lost, "category_name"),
-        _extract_val(found, "category_name"),
-    )
-    s_col, r_col, d_col = score_color(
-        _extract_val(lost, "color"), _extract_val(found, "color")
-    )
-    s_loc, r_loc, d_loc = score_location(
-        _extract_val(lost, "location_id"),
-        _extract_val(found, "location_id"),
-        _extract_val(lost, "location_name"),
-        _extract_val(found, "location_name"),
-    )
-    s_time, r_time, d_time = score_time(
-        _extract_val(lost, "lost_at") or _extract_val(lost, "timestamp"),
-        _extract_val(found, "found_at") or _extract_val(found, "timestamp"),
-    )
-
-    total = round(
-        max(
-            0.0,
-            min(
-                100.0,
-                (
-                    s_name * WEIGHT_NAME
-                    + s_cat * WEIGHT_CATEGORY
-                    + s_col * WEIGHT_COLOR
-                    + s_loc * WEIGHT_LOCATION
-                    + s_time * WEIGHT_TIME
-                ),
+    results = {
+        "name": (
+            WEIGHT_NAME,
+            score_name(
+                _extract_val(lost, "item_name"), _extract_val(found, "item_name")
             ),
         ),
-        2,
-    )
+        "category": (
+            WEIGHT_CATEGORY,
+            score_category(
+                _extract_val(lost, "category_id"),
+                _extract_val(found, "category_id"),
+                _extract_val(lost, "category_name"),
+                _extract_val(found, "category_name"),
+            ),
+        ),
+        "color": (
+            WEIGHT_COLOR,
+            score_color(_extract_val(lost, "color"), _extract_val(found, "color")),
+        ),
+        "location": (
+            WEIGHT_LOCATION,
+            score_location(
+                _extract_val(lost, "location_id"),
+                _extract_val(found, "location_id"),
+                _extract_val(lost, "location_name"),
+                _extract_val(found, "location_name"),
+            ),
+        ),
+        "time": (
+            WEIGHT_TIME,
+            score_time(
+                _extract_val(lost, "lost_at") or _extract_val(lost, "timestamp"),
+                _extract_val(found, "found_at") or _extract_val(found, "timestamp"),
+            ),
+        ),
+    }
+
+    components = {
+        key: ComponentScore(
+            score=score,
+            weight=weight,
+            weighted_score=round(score * weight, 2),
+            reason=reason,
+            details=details,
+        )
+        for key, (weight, (score, reason, details)) in results.items()
+    }
+
+    total = round(sum(score * weight for weight, (score, _, _) in results.values()), 2)
+    level = get_match_level(total)
+    if results["name"][1][0] < NAME_MIN_SCORE:
+        level = MatchLevel.LOW
 
     return MatchScoreResult(
         total_score=total,
-        level=get_match_level(total),
-        reasons=[r_name, r_cat, r_col, r_loc, r_time],
-        breakdown=MatchScoreBreakdown(
-            name=ComponentScore(
-                score=s_name,
-                weight=WEIGHT_NAME,
-                weighted_score=round(s_name * WEIGHT_NAME, 2),
-                reason=r_name,
-                details=d_name,
-            ),
-            category=ComponentScore(
-                score=s_cat,
-                weight=WEIGHT_CATEGORY,
-                weighted_score=round(s_cat * WEIGHT_CATEGORY, 2),
-                reason=r_cat,
-                details=d_cat,
-            ),
-            color=ComponentScore(
-                score=s_col,
-                weight=WEIGHT_COLOR,
-                weighted_score=round(s_col * WEIGHT_COLOR, 2),
-                reason=r_col,
-                details=d_col,
-            ),
-            location=ComponentScore(
-                score=s_loc,
-                weight=WEIGHT_LOCATION,
-                weighted_score=round(s_loc * WEIGHT_LOCATION, 2),
-                reason=r_loc,
-                details=d_loc,
-            ),
-            time=ComponentScore(
-                score=s_time,
-                weight=WEIGHT_TIME,
-                weighted_score=round(s_time * WEIGHT_TIME, 2),
-                reason=r_time,
-                details=d_time,
-            ),
-        ),
+        level=level,
+        reasons=[comp.reason for comp in components.values()],
+        breakdown=MatchScoreBreakdown(**components),
         algorithm_version=ALGORITHM_VERSION,
     )
-
-
-class WeightedMatchScorer:
-    version = ALGORITHM_VERSION
-
-    def score(self, lost: Any, found: Any) -> MatchScoreResult:
-        return calculate_match_score(lost, found)
