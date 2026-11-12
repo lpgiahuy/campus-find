@@ -3,7 +3,13 @@
 from fastapi import APIRouter
 
 from app.modules.matching.engine.fuzzy import detailed_fuzzy_match
-from app.modules.matching.schemas import FuzzyCheckRequest, FuzzySimilarityResult
+from app.modules.matching.engine.scorer import calculate_match_score
+from app.modules.matching.schemas import (
+    FuzzyCheckRequest,
+    FuzzySimilarityResult,
+    MatchScoreRequest,
+    MatchScoreResult,
+)
 from app.shared.schemas import ApiResponse
 
 router = APIRouter(prefix="/matching", tags=["Matching"])
@@ -30,5 +36,28 @@ def check_similarity(
     return ApiResponse(
         success=True,
         message="Tính toán độ tương đồng thành công",
+        data=result,
+    )
+
+
+@router.post(
+    "/score",
+    response_model=ApiResponse[MatchScoreResult],
+    summary="Tính điểm tương đồng có trọng số giữa hai tin (Weighted Matching Score)",
+    description=(
+        "Tính toán điểm tương đồng trên thang 0–100 kết hợp 5 tiêu chí: "
+        "Tên (35%), Danh mục (25%), Màu sắc (15%), Địa điểm (15%), Thời gian (10%). "
+        "Trả về chi tiết điểm thành phần (breakdown), lý do giải trình (reasons), "
+        "và phân loại ngưỡng HIGH (≥80), MEDIUM (60–79), LOW (<60)."
+    ),
+)
+def calculate_score(
+    payload: MatchScoreRequest,
+) -> ApiResponse[MatchScoreResult]:
+    """Endpoint tính điểm tương đồng có trọng số giữa tin thất lạc và tin nhặt được."""
+    result = calculate_match_score(lost=payload.lost, found=payload.found)
+    return ApiResponse(
+        success=True,
+        message="Tính toán điểm tương đồng thành công",
         data=result,
     )

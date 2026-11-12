@@ -1,4 +1,4 @@
-﻿# CampusFind — Kiến Trúc Hệ Thống (System Architecture)
+# CampusFind — Kiến Trúc Hệ Thống (System Architecture)
 
 ## 1. Giới thiệu tổng quan
 
@@ -68,7 +68,7 @@ flowchart TD
     *   `normalizer.py`: `normalize()` bỏ dấu, chữ thường, chỉ giữ `a-z0-9`, gộp khoảng trắng — chỉ dùng khi so khớp. Chi tiết: [matching-normalizer.md](matching-normalizer.md).
     *   `aliases.py`: Bảng từ đồng nghĩa tên đồ / màu (balo / ba lô, tai nghe / airpods, đen / black…) và `apply_aliases()`.
     *   `fuzzy.py`: So khớp mờ ký tự & token qua Levenshtein / Token Similarity (rapidfuzz), xử lý lỗi chính tả và biến thể thứ tự từ. Chi tiết: [matching-fuzzy.md](matching-fuzzy.md).
-    *   `scorer.py` (chưa triển khai): Tính điểm tương đồng có trọng số \(S = 100(0.35N + 0.25C + 0.15K + 0.15L + 0.10T)\) và trả về `score_breakdown` giải thích nguyên nhân.
+    *   `scorer.py`: Tính điểm tương đồng có trọng số \(S = 100(0.35N + 0.25C + 0.15K + 0.15L + 0.10T)\), phân loại ngưỡng HIGH (≥80), MEDIUM (60–79), LOW (<60) và trả về `score_breakdown` giải thích nguyên nhân. Chi tiết: [matching-scorer.md](matching-scorer.md).
 
 ---
 
