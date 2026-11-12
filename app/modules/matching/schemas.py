@@ -1,9 +1,12 @@
 """Matching Pydantic Schemas."""
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import Field
 
+from app.shared.enums import MatchLevel
 from app.shared.schemas import BaseSchema
 
 
@@ -67,4 +70,122 @@ class FuzzyCheckRequest(BaseSchema):
     alias_type: Literal["item", "color"] | None = Field(
         default=None,
         description="Bảng alias cần áp dụng: 'item', 'color' hoặc null",
+    )
+
+
+class ComponentScore(BaseSchema):
+    """Điểm số chi tiết cho một tiêu chí thành phần."""
+
+    score: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="Điểm thành phần chưa nhân trọng số trên thang [0.0, 100.0]",
+    )
+    weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Trọng số của tiêu chí (tổng trọng số 5 tiêu chí = 1.0)",
+    )
+    weighted_score: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="Điểm thành phần sau khi nhân trọng số (score * weight)",
+    )
+    reason: str = Field(
+        description="Lý do và giải trình kết quả so khớp của tiêu chí",
+    )
+    details: dict[str, Any] | None = Field(
+        default=None,
+        description="Thông tin chi tiết kỹ thuật (chỉ số fuzzy, diff thời gian...)",
+    )
+
+
+class MatchScoreBreakdown(BaseSchema):
+    """Bảng phân rã điểm số chi tiết của 5 tiêu chí thành phần."""
+
+    name: ComponentScore = Field(
+        description="Tiêu chí Tên tài sản (Trọng số 0.35)",
+    )
+    category: ComponentScore = Field(
+        description="Tiêu chí Danh mục tài sản (Trọng số 0.25)",
+    )
+    color: ComponentScore = Field(
+        description="Tiêu chí Màu sắc tài sản (Trọng số 0.15)",
+    )
+    location: ComponentScore = Field(
+        description="Tiêu chí Địa điểm thất lạc/nhặt được (Trọng số 0.15)",
+    )
+    time: ComponentScore = Field(
+        description="Tiêu chí Thời gian thất lạc/nhặt được (Trọng số 0.10)",
+    )
+
+
+class MatchScoreResult(BaseSchema):
+    """Kết quả tính toán Weighted Matching Score và phân loại ngưỡng."""
+
+    total_score: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="Tổng điểm tương đồng có trọng số trên thang [0.0, 100.0]",
+    )
+    level: MatchLevel = Field(
+        description="Phân loại mức độ tương đồng: HIGH (≥80), MEDIUM (60-79), LOW (<60)",
+    )
+    reasons: list[str] = Field(
+        description="Danh sách lý do giải thích cho từng tiêu chí đạt/chưa đạt",
+    )
+    breakdown: MatchScoreBreakdown = Field(
+        description="Chi tiết điểm thành phần của 5 tiêu chí",
+    )
+    algorithm_version: str = Field(
+        default="rules-v1",
+        description="Phiên bản thuật toán so khớp",
+    )
+
+
+class MatchItemInput(BaseSchema):
+    """Dữ liệu tài sản đầu vào để đối soát và chấm điểm."""
+
+    item_name: str = Field(
+        min_length=1,
+        max_length=200,
+        description="Tên đồ vật (ví dụ: Ví da Pedro, AirPods Pro, Thẻ sinh viên)",
+    )
+    category_id: UUID | str | None = Field(
+        default=None,
+        description="ID danh mục (UUID hoặc chuỗi định danh)",
+    )
+    category_name: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Tên danh mục (ví dụ: Điện tử, Giấy tờ, Phụ kiện)",
+    )
+    color: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Màu sắc đồ vật (ví dụ: Đen, Trắng, Nâu...)",
+    )
+    location_id: UUID | str | None = Field(
+        default=None,
+        description="ID địa điểm (UUID hoặc chuỗi định danh)",
+    )
+    location_name: str | None = Field(
+        default=None,
+        max_length=150,
+        description="Tên địa điểm (ví dụ: Thư viện, Giảng đường A, Căn tin)",
+    )
+    timestamp: datetime | None = Field(
+        default=None,
+        description="Thời gian mất hoặc nhặt (định dạng ISO-8601)",
+    )
+
+
+class MatchScoreRequest(BaseSchema):
+    """Yêu cầu tính điểm tương đồng giữa tin báo mất và tin nhặt được."""
+
+    lost: MatchItemInput = Field(
+        description="Thông tin tài sản thất lạc (Lost Report)",
+    )
+    found: MatchItemInput = Field(
+        description="Thông tin tài sản nhặt được (Found Report)",
     )

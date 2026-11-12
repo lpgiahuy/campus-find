@@ -1,4 +1,5 @@
 """Shared Enums (UserRole, ReportStatus, ClaimStatus, MatchLevel, HandoverMethod)."""
+
 from enum import StrEnum
 
 
@@ -17,3 +18,9 @@ class FoundReportStatus(StrEnum):
     OPEN = "OPEN"
     RETURNED = "RETURNED"
     CLOSED = "CLOSED"
+
+
+class MatchLevel(StrEnum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"

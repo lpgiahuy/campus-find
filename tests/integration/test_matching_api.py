@@ -1,5 +1,8 @@
 """Integration tests cho Matching API Controller (/api/v1/matching)."""
 
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 
@@ -97,5 +100,155 @@ async def test_matching_similarity_empty_input_returns_422(client: AsyncClient):
     response = await client.post(
         "/api/v1/matching/similarity",
         json={"text_a": "", "text_b": "bluetooth"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_score_high_success(client: AsyncClient):
+    """Kiểm tra API /api/v1/matching/score đạt ngưỡng HIGH (>= 80)."""
+    cat_id = str(uuid4())
+    loc_id = str(uuid4())
+    now = datetime.now(UTC).isoformat()
+
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {
+                "item_name": "Ví da Pedro",
+                "category_id": cat_id,
+                "category_name": "Phụ kiện",
+                "color": "đen",
+                "location_id": loc_id,
+                "location_name": "Thư viện",
+                "timestamp": now,
+            },
+            "found": {
+                "item_name": "Bóp da Pedro",
+                "category_id": cat_id,
+                "category_name": "Phụ kiện",
+                "color": "black",
+                "location_id": loc_id,
+                "location_name": "Thư viện",
+                "timestamp": now,
+            },
+        },
+    )
+    assert response.status_code == 200
+    res_json = response.json()
+    assert res_json["success"] is True
+    assert res_json["message"] == "Tính toán điểm tương đồng thành công"
+
+    data = res_json["data"]
+    assert data["total_score"] >= 80.0
+    assert data["level"] == "HIGH"
+    assert len(data["reasons"]) == 5
+    assert data["algorithm_version"] == "rules-v1"
+
+    bd = data["breakdown"]
+    assert bd["name"]["weight"] == 0.35
+    assert bd["category"]["weight"] == 0.25
+    assert bd["color"]["weight"] == 0.15
+    assert bd["location"]["weight"] == 0.15
+    assert bd["time"]["weight"] == 0.10
+
+    assert bd["category"]["score"] == 100.0
+    assert bd["color"]["score"] == 100.0
+    assert bd["location"]["score"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_matching_score_medium_success(client: AsyncClient):
+    """Kiểm tra API /api/v1/matching/score đạt ngưỡng MEDIUM (60 - 79)."""
+    cat_id = str(uuid4())
+    now = datetime.now(UTC)
+
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {
+                "item_name": "Tai nghe AirPods Pro",
+                "category_id": cat_id,
+                "location_id": str(uuid4()),
+                "timestamp": now.isoformat(),
+            },
+            "found": {
+                "item_name": "Tai nghe bluetooth không dây",
+                "category_id": cat_id,
+                "location_id": str(uuid4()),
+                "timestamp": (now + timedelta(days=2)).isoformat(),
+            },
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert 60.0 <= data["total_score"] < 80.0
+    assert data["level"] == "MEDIUM"
+
+
+@pytest.mark.asyncio
+async def test_matching_score_low_success(client: AsyncClient):
+    """Kiểm tra API /api/v1/matching/score đạt ngưỡng LOW (< 60)."""
+    now = datetime.now(UTC)
+
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {
+                "item_name": "Balo laptop Acer",
+                "category_id": str(uuid4()),
+                "color": "đỏ",
+                "timestamp": now.isoformat(),
+            },
+            "found": {
+                "item_name": "Thẻ sinh viên UIT",
+                "category_id": str(uuid4()),
+                "color": "xanh",
+                "timestamp": (now + timedelta(days=13)).isoformat(),
+            },
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_score"] < 60.0
+    assert data["level"] == "LOW"
+
+
+@pytest.mark.asyncio
+async def test_matching_score_missing_required_item_name(client: AsyncClient):
+    """Thiếu item_name trả về lỗi validation 422."""
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {},
+            "found": {"item_name": "Ví da"},
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_score_empty_item_name(client: AsyncClient):
+    """item_name là chuỗi rỗng trả về 422."""
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {"item_name": ""},
+            "found": {"item_name": "Ví da"},
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_matching_score_item_name_too_long(client: AsyncClient):
+    """item_name vượt quá 200 ký tự trả về 422."""
+    too_long = "a" * 201
+    response = await client.post(
+        "/api/v1/matching/score",
+        json={
+            "lost": {"item_name": too_long},
+            "found": {"item_name": "Ví da"},
+        },
     )
     assert response.status_code == 422
