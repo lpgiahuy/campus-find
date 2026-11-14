@@ -1,10 +1,20 @@
 """Integration tests cho Matching API Controller (/api/v1/matching)."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+
+from app.core.dependencies import get_current_user, get_service
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.db.models import User
+from app.db.session import get_db
+from app.main import app
+from app.modules.matching.schemas import MatchRead
+from app.modules.matching.service import MatchingService
+from app.modules.reports.schemas import FoundReportPublic
 
 
 @pytest.mark.asyncio
@@ -252,3 +262,111 @@ async def test_matching_score_item_name_too_long(client: AsyncClient):
         },
     )
     assert response.status_code == 422
+
+
+# ---------- Task #12: /matching/{side}/{id} ----------
+
+NOW = datetime.now(UTC)
+
+
+async def _dummy_db():
+    yield AsyncMock()
+
+
+def _match_read() -> MatchRead:
+    found = FoundReportPublic(
+        id=uuid4(),
+        user_id=uuid4(),
+        item_name="Tai nghe",
+        category_id=uuid4(),
+        location_id=uuid4(),
+        color=None,
+        description_public=None,
+        created_at=NOW,
+        updated_at=NOW,
+        found_at=NOW,
+        status="OPEN",
+    )
+    return MatchRead(
+        id=uuid4(),
+        score=85.0,
+        level="HIGH",
+        score_breakdown={},
+        algorithm_version="rules-v1",
+        calculated_at=NOW,
+        notified_at=NOW,
+        seen_at=None,
+        report=found,
+    )
+
+
+@pytest.fixture
+def match_client():
+    """Client đã đăng nhập, MatchingService bị mock."""
+    service = AsyncMock(spec=MatchingService)
+    user = User(
+        id=uuid4(), email="a@uit.test", full_name="A", role="USER", is_active=True
+    )
+    app.dependency_overrides[get_db] = _dummy_db
+    app.dependency_overrides[get_service(MatchingService)] = lambda: service
+    app.dependency_overrides[get_current_user] = lambda: user
+    yield AsyncClient(transport=ASGITransport(app=app), base_url="http://test"), service
+    app.dependency_overrides.clear()
+
+
+def _calls(rid):
+    return [
+        ("post", f"/api/v1/matching/lost/{rid}/recalculate", "recalculate"),
+        ("get", f"/api/v1/matching/found/{rid}", "list"),
+    ]
+
+
+async def test_match_endpoints_require_login():
+    app.dependency_overrides[get_db] = _dummy_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            for method, url, _ in _calls(uuid4()):
+                assert (await client.request(method, url)).status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def test_match_endpoints_reject_unknown_side(match_client):
+    client, _ = match_client
+    async with client:
+        assert (await client.get(f"/api/v1/matching/abc/{uuid4()}")).status_code == 422
+        assert (
+            await client.post(f"/api/v1/matching/abc/{uuid4()}/recalculate")
+        ).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [(NotFoundError(), 404), (ForbiddenError(), 403), (ConflictError(), 409)],
+)
+async def test_match_endpoints_map_service_errors(match_client, error, status):
+    client, service = match_client
+    async with client:
+        for method, url, name in _calls(uuid4()):
+            getattr(service, name).side_effect = error
+            assert (await client.request(method, url)).status_code == status
+
+
+async def test_match_endpoints_return_public_counterpart(match_client):
+    client, service = match_client
+    rid = uuid4()
+    service.recalculate.return_value = [_match_read()]
+    service.list.return_value = [_match_read()]
+    async with client:
+        for method, url, _ in _calls(rid):
+            response = await client.request(method, url)
+            assert response.status_code == 200
+            item = response.json()["data"][0]
+            assert item["level"] == "HIGH"
+            assert "private_identifiers" not in item["report"]
+            assert "storage_note" not in item["report"]
+    service.recalculate.assert_awaited_once()
+    assert service.recalculate.await_args.args[:2] == ("lost", rid)
+    assert service.list.await_args.args[:2] == ("found", rid)

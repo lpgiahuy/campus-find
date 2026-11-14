@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.modules.reports.schemas import FoundReportPublic, LostReportPublic
 from app.shared.enums import MatchLevel
 from app.shared.schemas import BaseSchema
 
@@ -188,4 +189,28 @@ class MatchScoreRequest(BaseSchema):
     )
     found: MatchItemInput = Field(
         description="Thông tin tài sản nhặt được (Found Report)",
+    )
+
+
+class MatchRead(BaseSchema):
+    """Một match đã lưu, nhìn từ phía chủ tin nguồn (#12)."""
+
+    id: UUID
+    score: float = Field(ge=0.0, le=100.0, description="Điểm tổng 0–100")
+    level: MatchLevel = Field(
+        description="HIGH (≥80) hoặc MEDIUM (60–79); LOW không được lưu"
+    )
+    score_breakdown: dict[str, Any] = Field(
+        description="Điểm thành phần từ scorer (#11)"
+    )
+    algorithm_version: str
+    calculated_at: datetime
+    notified_at: datetime | None = Field(
+        description="Lúc báo cho phía người xem (match HIGH); null = chưa báo"
+    )
+    seen_at: datetime | None = Field(
+        description="Lúc chủ tin xem lần đầu; null ở lần xem này = match mới"
+    )
+    report: LostReportPublic | FoundReportPublic = Field(
+        description="Tin phía bên kia (chỉ dữ liệu công khai)"
     )

@@ -83,7 +83,7 @@ class ReportService(BaseService):
         report = await self.get(report_id, for_update=True)
         if report.user_id != user.id:
             raise ForbiddenError(f"Chỉ chủ tin được sửa {self.label.lower()}")
-        self._ensure_open(report)
+        self.ensure_open(report)
         changes = data.model_dump(exclude_unset=True)
         # Chỉ kiểm tra khi đổi sang giá trị mới: giữ nguyên danh mục đã ngừng dùng vẫn sửa được.
         await self._ensure_active_catalog(
@@ -100,7 +100,7 @@ class ReportService(BaseService):
         report = await self.get(report_id, for_update=True)
         if not is_owner_or_admin(user, report):
             raise ForbiddenError()
-        self._ensure_open(report)
+        self.ensure_open(report)
         report.status = self.status_enum.CLOSED
         await self.db.flush()
         await self.db.refresh(report)
@@ -113,7 +113,7 @@ class ReportService(BaseService):
         value = changes.get(field)
         return value if value != getattr(report, field) else None
 
-    def _ensure_open(self, report: Report) -> None:
+    def ensure_open(self, report: Report) -> None:
         if report.status != self.status_enum.OPEN:
             raise ConflictError(f"{self.label} không còn mở, không thể thay đổi")
 

@@ -1,18 +1,29 @@
 """Matching Controller."""
 
-from fastapi import APIRouter
+from typing import Annotated
+from uuid import UUID
 
+from fastapi import APIRouter, Depends
+
+from app.core.dependencies import get_current_user, get_service
+from app.db.models import User
 from app.modules.matching.engine.fuzzy import detailed_fuzzy_match
 from app.modules.matching.engine.scorer import calculate_match_score
+from app.modules.matching.repository import Side
 from app.modules.matching.schemas import (
     FuzzyCheckRequest,
     FuzzySimilarityResult,
+    MatchRead,
     MatchScoreRequest,
     MatchScoreResult,
 )
+from app.modules.matching.service import MatchingService
 from app.shared.schemas import ApiResponse
 
 router = APIRouter(prefix="/matching", tags=["Matching"])
+
+Service = Annotated[MatchingService, Depends(get_service(MatchingService))]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.post(
@@ -61,3 +72,38 @@ def calculate_score(
         message="Tính toán điểm tương đồng thành công",
         data=result,
     )
+
+
+@router.post(
+    "/{side}/{report_id}/recalculate",
+    response_model=ApiResponse[list[MatchRead]],
+    summary="Tính lại match cho một tin (chủ tin hoặc ADMIN, tin còn OPEN)",
+    description=(
+        "`side`: `lost` (tin mất) hoặc `found` (tin nhặt). Lọc ứng viên, chấm điểm, "
+        "lưu các cặp MEDIUM/HIGH và xóa cặp không còn đạt. Match HIGH được đánh dấu "
+        "thông báo cho cả hai bên. Chủ tin gọi thì cũng tính là đã xem danh sách "
+        "(như GET)."
+    ),
+)
+async def recalculate_matches(
+    side: Side, report_id: UUID, user: CurrentUser, service: Service
+):
+    return ApiResponse(
+        message="Tính lại match thành công",
+        data=await service.recalculate(side, report_id, user),
+    )
+
+
+@router.get(
+    "/{side}/{report_id}",
+    response_model=ApiResponse[list[MatchRead]],
+    summary="Danh sách match đã lưu của một tin (chủ tin hoặc ADMIN)",
+    description=(
+        "Chỉ hiện match có tin bên kia còn OPEN, điểm giảm dần. Chủ tin xem → "
+        "các match đã thông báo được đánh dấu đã xem (`seen_at` = null nghĩa là mới)."
+    ),
+)
+async def list_matches(
+    side: Side, report_id: UUID, user: CurrentUser, service: Service
+):
+    return ApiResponse(data=await service.list(side, report_id, user))
