@@ -214,3 +214,12 @@ class MatchRead(BaseSchema):
     report: LostReportPublic | FoundReportPublic = Field(
         description="Tin phía bên kia (chỉ dữ liệu công khai)"
     )
+
+
+class NotificationRead(MatchRead):
+    """Thông báo match HIGH chưa đọc của người dùng."""
+
+    side: Literal["lost", "found"] = Field(
+        description="Tin của bạn thuộc phía nào trong match"
+    )
+    source_report_id: UUID = Field(description="Tin của bạn đã khớp")

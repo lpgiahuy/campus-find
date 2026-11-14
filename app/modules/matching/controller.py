@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_current_user, get_service
 from app.db.models import User
@@ -16,11 +16,13 @@ from app.modules.matching.schemas import (
     MatchRead,
     MatchScoreRequest,
     MatchScoreResult,
+    NotificationRead,
 )
 from app.modules.matching.service import MatchingService
 from app.shared.schemas import ApiResponse
 
 router = APIRouter(prefix="/matching", tags=["Matching"])
+notifications_router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 Service = Annotated[MatchingService, Depends(get_service(MatchingService))]
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -107,3 +109,27 @@ async def list_matches(
     side: Side, report_id: UUID, user: CurrentUser, service: Service
 ):
     return ApiResponse(data=await service.list(side, report_id, user))
+
+
+@notifications_router.get(
+    "/unread",
+    response_model=ApiResponse[list[NotificationRead]],
+    summary="Thông báo match HIGH (≥80) chưa đọc của tôi, mới nhất trước",
+    description=(
+        "Gồm cả tin mất và tin nhặt của người dùng. Chỉ trả dữ liệu công khai của tin bên kia, "
+        "không có số điện thoại."
+    ),
+)
+async def list_unread_notifications(user: CurrentUser, service: Service):
+    return ApiResponse(data=await service.list_unread_notifications(user))
+
+
+@notifications_router.post(
+    "/{match_id}/read",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Đánh dấu đã đọc thông báo của một match (idempotent)",
+)
+async def mark_notification_read(
+    match_id: UUID, user: CurrentUser, service: Service
+) -> None:
+    await service.mark_notification_read(match_id, user)

@@ -1,4 +1,5 @@
 """Reports Controller."""
+
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
@@ -12,6 +13,8 @@ from app.core.dependencies import (
     get_service,
 )
 from app.db.models import User
+from app.modules.matching.repository import Side
+from app.modules.matching.service import MatchingService
 from app.modules.reports.schemas import (
     FoundReportCreate,
     FoundReportPatch,
@@ -43,6 +46,7 @@ def build_report_router(
     *,
     prefix: str,
     tag: str,
+    side: Side,
     service_cls: type[ReportService],
     create_schema: type[BaseSchema],
     patch_schema: type[BaseSchema],
@@ -54,6 +58,7 @@ def build_report_router(
     router = APIRouter(prefix=prefix, tags=[tag])
     label = service_cls.label
     Service = Annotated[service_cls, Depends(get_service(service_cls))]
+    Matching = Annotated[MatchingService, Depends(get_service(MatchingService))]
     CurrentUser = Annotated[User, Depends(get_current_user)]
     # Xem danh sách / chi tiết không cần đăng nhập; token sai coi như khách.
     OptionalUser = Annotated[User | None, Depends(get_optional_current_user)]
@@ -70,8 +75,11 @@ def build_report_router(
         status_code=status.HTTP_201_CREATED,
         summary=f"Đăng {label.lower()}",
     )
-    async def create_report(data: create_schema, user: CurrentUser, service: Service):
+    async def create_report(
+        data: create_schema, user: CurrentUser, service: Service, matching: Matching
+    ):
         report = await service.create(data, user)
+        await matching.recalculate(side, report.id, user)
         return ApiResponse(
             message=f"Đăng {label.lower()} thành công",
             data=private_schema.model_validate(report),
@@ -154,6 +162,7 @@ def build_report_router(
 
 lost_reports_router = build_report_router(
     prefix="/lost-reports",
+    side="lost",
     tag="Lost Reports",
     service_cls=LostReportService,
     create_schema=LostReportCreate,
@@ -165,6 +174,7 @@ lost_reports_router = build_report_router(
 
 found_reports_router = build_report_router(
     prefix="/found-reports",
+    side="found",
     tag="Found Reports",
     service_cls=FoundReportService,
     create_schema=FoundReportCreate,

@@ -20,6 +20,7 @@ from app.core.exceptions import (
 from app.db.models import Category, FoundReport, Location, LostReport, User
 from app.db.session import get_db
 from app.main import app
+from app.modules.matching.service import MatchingService
 from app.modules.reports.schemas import (
     FoundReportCreate,
     FoundReportPublic,
@@ -106,13 +107,19 @@ def mock_found_service():
 
 
 @pytest.fixture
-def as_user(mock_lost_service, mock_found_service):
+def mock_matching_service():
+    return AsyncMock(spec=MatchingService)
+
+
+@pytest.fixture
+def as_user(mock_lost_service, mock_found_service, mock_matching_service):
     """Trả về hàm tạo client đăng nhập bằng user cho trước."""
     app.dependency_overrides[get_db] = dummy_db
     app.dependency_overrides[get_service(LostReportService)] = lambda: mock_lost_service
     app.dependency_overrides[get_service(FoundReportService)] = (
         lambda: mock_found_service
     )
+    app.dependency_overrides[get_service(MatchingService)] = lambda: mock_matching_service
 
     def _client(user: User | None) -> AsyncClient:
         """user=None: khách chưa đăng nhập (chỉ dùng cho endpoint xem)."""
@@ -230,6 +237,15 @@ async def test_create_returns_private(as_user, mock_lost_service):
         response = await client.post("/api/v1/lost-reports", json=lost_body())
     assert response.status_code == 201
     assert response.json()["data"]["private_identifiers"] == "Thẻ SV tên Nguyễn Văn A"
+
+
+async def test_create_triggers_matching_for_new_report(as_user, mock_lost_service, mock_matching_service):
+    owner = make_user()
+    report = make_lost(owner)
+    mock_lost_service.create.return_value = report
+    async with as_user(owner) as client:
+        await client.post("/api/v1/lost-reports", json=lost_body())
+    mock_matching_service.recalculate.assert_awaited_once_with("lost", report.id, owner)
 
 
 @pytest.mark.parametrize(

@@ -9,11 +9,11 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import FoundReport, LostReport, Match, User
 from app.modules.matching.engine.scorer import calculate_match_score, get_match_level
 from app.modules.matching.repository import MatchingRepository, Side
-from app.modules.matching.schemas import MatchRead
+from app.modules.matching.schemas import MatchRead, NotificationRead
 from app.modules.reports.schemas import FoundReportPublic, LostReportPublic
 from app.modules.reports.service import (
     FoundReportService,
@@ -75,26 +75,46 @@ class MatchingService(BaseService):
                 }
             )
         await self.matches.replace_for(side, source.id, rows)
-        return await self._read(side, source, user)
+        return await self._read(side, source)
 
     async def list(self, side: Side, report_id: UUID, user: User) -> list[MatchRead]:
         # Tin đã đóng vẫn xem được kết quả cũ, nên không kiểm tra OPEN.
         source = await REPORT_SERVICES[side](self.db).get(report_id)
         self._ensure_access(user, source)
-        return await self._read(side, source, user)
-
-    async def _read(
-        self, side: Side, source: LostReport | FoundReport, user: User
-    ) -> list[MatchRead]:
-        items = [
-            self._to_read(side, match, other)
-            for match, other in await self.matches.list_for(side, source.id)
-        ]
+        items = await self._read(side, source)
         # Đọc trước, đánh dấu sau: response lần này vẫn báo match mới (seen_at null).
         # Chỉ đánh dấu match vừa trả về; match bị ẩn (bên kia đã đóng) giữ nguyên.
         if user.id == source.user_id:
             await self.matches.mark_seen(side, [item.id for item in items])
         return items
+
+    async def list_unread_notifications(self, user: User) -> list[NotificationRead]:
+        items = []
+        for side in ("lost", "found"):
+            for match, other in await self.matches.list_unread(side, user.id):
+                read = self._to_read(side, match, other)
+                items.append(
+                    NotificationRead(
+                        **dict(read),
+                        side=side,
+                        source_report_id=getattr(match, f"{side}_report_id"),
+                    )
+                )
+        return sorted(items, key=lambda item: item.notified_at, reverse=True)
+
+    async def mark_notification_read(self, match_id: UUID, user: User) -> None:
+        for side in ("lost", "found"):
+            if await self.matches.mark_read(side, match_id, user.id):
+                return
+        raise NotFoundError("Thông báo không tồn tại")
+
+    async def _read(
+        self, side: Side, source: LostReport | FoundReport
+    ) -> list[MatchRead]:
+        return [
+            self._to_read(side, match, other)
+            for match, other in await self.matches.list_for(side, source.id)
+        ]
 
     @staticmethod
     def _ensure_access(user: User, source: LostReport | FoundReport) -> None:
