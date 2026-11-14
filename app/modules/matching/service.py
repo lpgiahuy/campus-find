@@ -1,4 +1,7 @@
 """Matching Business Logic Service."""
+# Python 3.12 (CI) đánh giá annotation ngay: `list[...]` sau `def list` sẽ trỏ vào method.
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from uuid import UUID
 
