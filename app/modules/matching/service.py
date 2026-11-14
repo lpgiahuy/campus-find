@@ -1,5 +1,7 @@
 """Matching Business Logic Service."""
-# Python 3.12 (CI) đánh giá annotation ngay: `list[...]` sau `def list` sẽ trỏ vào method.
+
+# Python 3.12 (CI) đánh giá annotation ngay: `list[...]` sau `def list`
+# sẽ trỏ vào method.
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -33,17 +35,25 @@ class MatchingService(BaseService):
         super().__init__(db)
         self.matches = MatchingRepository(db)
 
-    async def recalculate(self, side: Side, report_id: UUID, user: User) -> list[MatchRead]:
+    async def recalculate(
+        self, side: Side, report_id: UUID, user: User
+    ) -> list[MatchRead]:
         reports = REPORT_SERVICES[side](self.db)
         # Khóa tin nguồn: hai lần recalculate cùng lúc không đan xen delete / upsert.
         source = await reports.get(report_id, for_update=True)
         self._ensure_access(user, source)
-        reports._ensure_open(source)
+        reports.ensure_open(source)
 
         if side == "lost":
-            pairs = [(source, found) for found in await self.matches.find_found_candidates(source)]
+            pairs = [
+                (source, found)
+                for found in await self.matches.find_found_candidates(source)
+            ]
         else:
-            pairs = [(lost, source) for lost in await self.matches.find_lost_candidates(source)]
+            pairs = [
+                (lost, source)
+                for lost in await self.matches.find_lost_candidates(source)
+            ]
 
         now = datetime.now(UTC)
         rows = []
@@ -80,9 +90,10 @@ class MatchingService(BaseService):
             self._to_read(side, match, other)
             for match, other in await self.matches.list_for(side, source.id)
         ]
-        # Đọc trước, đánh dấu sau: response lần này vẫn cho thấy match nào mới (seen_at = null).
+        # Đọc trước, đánh dấu sau: response lần này vẫn báo match mới (seen_at null).
+        # Chỉ đánh dấu match vừa trả về; match bị ẩn (bên kia đã đóng) giữ nguyên.
         if user.id == source.user_id:
-            await self.matches.mark_seen(side, source.id)
+            await self.matches.mark_seen(side, [item.id for item in items])
         return items
 
     @staticmethod
@@ -91,9 +102,11 @@ class MatchingService(BaseService):
             raise ForbiddenError("Chỉ chủ tin hoặc ADMIN được xem / tính lại match")
 
     @staticmethod
-    def _to_read(side: Side, match: Match, other: LostReport | FoundReport) -> MatchRead:
+    def _to_read(
+        side: Side, match: Match, other: LostReport | FoundReport
+    ) -> MatchRead:
         score = float(match.score)
-        # Dòng đã lưu luôn có tên đạt ngưỡng của scorer, nên level suy lại từ điểm là đúng.
+        # Dòng đã lưu luôn có tên đạt ngưỡng scorer → suy level lại từ điểm là đúng.
         return MatchRead(
             id=match.id,
             score=score,

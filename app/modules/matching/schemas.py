@@ -197,12 +197,16 @@ class MatchRead(BaseSchema):
 
     id: UUID
     score: float = Field(ge=0.0, le=100.0, description="Điểm tổng 0–100")
-    level: MatchLevel = Field(description="HIGH (≥80) hoặc MEDIUM (60–79); LOW không được lưu")
-    score_breakdown: dict[str, Any] = Field(description="Điểm thành phần từ scorer (#11)")
+    level: MatchLevel = Field(
+        description="HIGH (≥80) hoặc MEDIUM (60–79); LOW không được lưu"
+    )
+    score_breakdown: dict[str, Any] = Field(
+        description="Điểm thành phần từ scorer (#11)"
+    )
     algorithm_version: str
     calculated_at: datetime
     notified_at: datetime | None = Field(
-        description="Lúc thông báo cho phía người xem (match HIGH); null = chưa thông báo"
+        description="Lúc báo cho phía người xem (match HIGH); null = chưa báo"
     )
     seen_at: datetime | None = Field(
         description="Lúc chủ tin xem lần đầu; null ở lần xem này = match mới"

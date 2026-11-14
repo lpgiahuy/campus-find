@@ -275,13 +275,28 @@ async def _dummy_db():
 
 def _match_read() -> MatchRead:
     found = FoundReportPublic(
-        id=uuid4(), user_id=uuid4(), item_name="Tai nghe", category_id=uuid4(),
-        location_id=uuid4(), color=None, description_public=None, created_at=NOW,
-        updated_at=NOW, found_at=NOW, status="OPEN",
+        id=uuid4(),
+        user_id=uuid4(),
+        item_name="Tai nghe",
+        category_id=uuid4(),
+        location_id=uuid4(),
+        color=None,
+        description_public=None,
+        created_at=NOW,
+        updated_at=NOW,
+        found_at=NOW,
+        status="OPEN",
     )
     return MatchRead(
-        id=uuid4(), score=85.0, level="HIGH", score_breakdown={}, algorithm_version="rules-v1",
-        calculated_at=NOW, notified_at=NOW, seen_at=None, report=found,
+        id=uuid4(),
+        score=85.0,
+        level="HIGH",
+        score_breakdown={},
+        algorithm_version="rules-v1",
+        calculated_at=NOW,
+        notified_at=NOW,
+        seen_at=None,
+        report=found,
     )
 
 
@@ -289,7 +304,9 @@ def _match_read() -> MatchRead:
 def match_client():
     """Client đã đăng nhập, MatchingService bị mock."""
     service = AsyncMock(spec=MatchingService)
-    user = User(id=uuid4(), email="a@uit.test", full_name="A", role="USER", is_active=True)
+    user = User(
+        id=uuid4(), email="a@uit.test", full_name="A", role="USER", is_active=True
+    )
     app.dependency_overrides[get_db] = _dummy_db
     app.dependency_overrides[get_service(MatchingService)] = lambda: service
     app.dependency_overrides[get_current_user] = lambda: user
@@ -307,7 +324,9 @@ def _calls(rid):
 async def test_match_endpoints_require_login():
     app.dependency_overrides[get_db] = _dummy_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             for method, url, _ in _calls(uuid4()):
                 assert (await client.request(method, url)).status_code == 401
     finally:
@@ -318,7 +337,9 @@ async def test_match_endpoints_reject_unknown_side(match_client):
     client, _ = match_client
     async with client:
         assert (await client.get(f"/api/v1/matching/abc/{uuid4()}")).status_code == 422
-        assert (await client.post(f"/api/v1/matching/abc/{uuid4()}/recalculate")).status_code == 422
+        assert (
+            await client.post(f"/api/v1/matching/abc/{uuid4()}/recalculate")
+        ).status_code == 422
 
 
 @pytest.mark.parametrize(

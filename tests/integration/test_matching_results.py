@@ -4,6 +4,7 @@ Giống test_matching_candidates: mọi thứ chạy trong một transaction r�
 nên DB test vẫn trống cho test_migration. Scorer được thay bằng điểm cố định
 theo tên tin nhặt để test không phụ thuộc trọng số của #11.
 """
+
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -33,7 +34,11 @@ pytestmark = pytest.mark.skipif(
 T = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 _COMPONENT = ComponentScore(score=0, weight=0, weighted_score=0, reason="test")
 _BREAKDOWN = MatchScoreBreakdown(
-    name=_COMPONENT, category=_COMPONENT, color=_COMPONENT, location=_COMPONENT, time=_COMPONENT
+    name=_COMPONENT,
+    category=_COMPONENT,
+    color=_COMPONENT,
+    location=_COMPONENT,
+    time=_COMPONENT,
 )
 
 
@@ -45,7 +50,10 @@ async def env(monkeypatch):
     def fake_score(lost, found):
         s = scores[found.item_name]
         return MatchScoreResult(
-            total_score=s, level=get_match_level(s), reasons=[], breakdown=_BREAKDOWN,
+            total_score=s,
+            level=get_match_level(s),
+            reasons=[],
+            breakdown=_BREAKDOWN,
             algorithm_version="test-v0",
         )
 
@@ -58,8 +66,19 @@ async def env(monkeypatch):
             await conn.run_sync(Base.metadata.create_all)
             session = AsyncSession(bind=conn)
             owner, finder, stranger, admin = (
-                User(id=uuid.uuid4(), email=f"{n}@uit.test", password_hash="x", full_name=n, role=r)
-                for n, r in [("a", "USER"), ("b", "USER"), ("c", "USER"), ("admin", UserRole.ADMIN)]
+                User(
+                    id=uuid.uuid4(),
+                    email=f"{n}@uit.test",
+                    password_hash="x",
+                    full_name=n,
+                    role=r,
+                )
+                for n, r in [
+                    ("a", "USER"),
+                    ("b", "USER"),
+                    ("c", "USER"),
+                    ("admin", UserRole.ADMIN),
+                ]
             )
             cat = Category(id=uuid.uuid4(), name="X")
             loc = Location(id=uuid.uuid4(), name="Thư viện")
@@ -68,13 +87,21 @@ async def env(monkeypatch):
 
             common = {"category_id": cat.id, "location_id": loc.id}
             lost = LostReport(
-                id=uuid.uuid4(), user_id=owner.id, item_name="ví", lost_at=T,
-                status=LostReportStatus.OPEN, **common,
+                id=uuid.uuid4(),
+                user_id=owner.id,
+                item_name="ví",
+                lost_at=T,
+                status=LostReportStatus.OPEN,
+                **common,
             )
             founds = {
                 name: FoundReport(
-                    id=uuid.uuid4(), user_id=finder.id, item_name=name,
-                    found_at=T + timedelta(days=1), status=FoundReportStatus.OPEN, **common,
+                    id=uuid.uuid4(),
+                    user_id=finder.id,
+                    item_name=name,
+                    found_at=T + timedelta(days=1),
+                    status=FoundReportStatus.OPEN,
+                    **common,
                 )
                 for name in scores
             }
@@ -145,7 +172,7 @@ async def test_recalculate_from_found_side_reuses_same_row(env):
 async def test_owner_view_marks_seen_admin_view_does_not(env):
     founds, service, session = env["founds"], env["service"], env["session"]
     lost_id = env["lost"].id
-    # ADMIN chạy: chủ tin chưa nhận danh sách nào (owner recalculate cũng tính là đã xem).
+    # ADMIN chạy: chủ tin chưa nhận danh sách (owner recalculate tính là đã xem).
     await service.recalculate("lost", lost_id, env["admin"])
 
     await service.list("lost", lost_id, env["admin"])
@@ -155,19 +182,23 @@ async def test_owner_view_marks_seen_admin_view_does_not(env):
     assert items[0].seen_at is None  # response lần này vẫn báo là match mới
     rows = await stored(session)
     assert rows[founds["high"].id].lost_seen_at is not None
-    assert rows[founds["medium"].id].lost_seen_at is None  # chưa thông báo thì không đánh dấu
+    assert (
+        rows[founds["medium"].id].lost_seen_at is None
+    )  # chưa thông báo thì không đánh dấu
     assert rows[founds["high"].id].found_seen_at is None  # phía bên kia chưa xem
 
 
-async def test_closed_counterpart_is_hidden(env):
+async def test_closed_counterpart_is_hidden_and_not_marked_seen(env):
     founds, service = env["founds"], env["service"]
-    await service.recalculate("lost", env["lost"].id, env["owner"])
+    await service.recalculate("lost", env["lost"].id, env["admin"])
 
     founds["high"].status = FoundReportStatus.CLOSED
     await env["session"].flush()
 
     items = await service.list("lost", env["lost"].id, env["owner"])
     assert [i.report.id for i in items] == [founds["medium"].id]
+    # Match HIGH bị ẩn → chủ tin chưa thấy → không đánh dấu đã xem.
+    assert (await stored(env["session"]))[founds["high"].id].lost_seen_at is None
 
 
 async def test_access_and_state_errors(env):

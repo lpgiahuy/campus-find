@@ -75,24 +75,27 @@ def calculate_score(
 
 
 @router.post(
-    "/{side}/{id}/recalculate",
+    "/{side}/{report_id}/recalculate",
     response_model=ApiResponse[list[MatchRead]],
     summary="Tính lại match cho một tin (chủ tin hoặc ADMIN, tin còn OPEN)",
     description=(
         "`side`: `lost` (tin mất) hoặc `found` (tin nhặt). Lọc ứng viên, chấm điểm, "
         "lưu các cặp MEDIUM/HIGH và xóa cặp không còn đạt. Match HIGH được đánh dấu "
-        "thông báo cho cả hai bên."
+        "thông báo cho cả hai bên. Chủ tin gọi thì cũng tính là đã xem danh sách "
+        "(như GET)."
     ),
 )
-async def recalculate_matches(side: Side, id: UUID, user: CurrentUser, service: Service):
+async def recalculate_matches(
+    side: Side, report_id: UUID, user: CurrentUser, service: Service
+):
     return ApiResponse(
         message="Tính lại match thành công",
-        data=await service.recalculate(side, id, user),
+        data=await service.recalculate(side, report_id, user),
     )
 
 
 @router.get(
-    "/{side}/{id}",
+    "/{side}/{report_id}",
     response_model=ApiResponse[list[MatchRead]],
     summary="Danh sách match đã lưu của một tin (chủ tin hoặc ADMIN)",
     description=(
@@ -100,5 +103,7 @@ async def recalculate_matches(side: Side, id: UUID, user: CurrentUser, service: 
         "các match đã thông báo được đánh dấu đã xem (`seen_at` = null nghĩa là mới)."
     ),
 )
-async def list_matches(side: Side, id: UUID, user: CurrentUser, service: Service):
-    return ApiResponse(data=await service.list(side, id, user))
+async def list_matches(
+    side: Side, report_id: UUID, user: CurrentUser, service: Service
+):
+    return ApiResponse(data=await service.list(side, report_id, user))
