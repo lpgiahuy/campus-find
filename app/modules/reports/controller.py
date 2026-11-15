@@ -137,9 +137,14 @@ def build_report_router(
         summary=f"Sửa {label.lower()} (chủ tin, khi tin còn OPEN)",
     )
     async def update_report(
-        id: UUID, data: patch_schema, user: CurrentUser, service: Service
+        id: UUID,
+        data: patch_schema,
+        user: CurrentUser,
+        service: Service,
+        matching: Matching,
     ):
         report = await service.update(id, data, user)
+        await matching.recalculate(side, report.id, user)
         return ApiResponse(
             message=f"Cập nhật {label.lower()} thành công",
             data=private_schema.model_validate(report),

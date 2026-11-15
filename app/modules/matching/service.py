@@ -100,7 +100,9 @@ class MatchingService(BaseService):
                         source_report_id=getattr(match, f"{side}_report_id"),
                     )
                 )
-        return sorted(items, key=lambda item: item.notified_at, reverse=True)
+        return sorted(
+            items, key=lambda item: (item.notified_at, item.score), reverse=True
+        )
 
     async def mark_notification_read(self, match_id: UUID, user: User) -> None:
         for side in ("lost", "found"):

@@ -218,7 +218,7 @@ async def test_access_and_state_errors(env):
 
 async def test_unread_notifications_for_both_owners_high_only(env):
     founds, service = env["founds"], env["service"]
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
 
     for user, side, source_id, other_id in [
         (env["owner"], "lost", env["lost"].id, founds["high"].id),
@@ -234,7 +234,7 @@ async def test_unread_notifications_for_both_owners_high_only(env):
 
 async def test_mark_notification_read_is_idempotent_and_per_side(env):
     founds, service, session = env["founds"], env["service"], env["session"]
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
     match_id = (await stored(session))[founds["high"].id].id
 
     await service.mark_notification_read(match_id, env["owner"])
@@ -249,7 +249,7 @@ async def test_mark_notification_read_is_idempotent_and_per_side(env):
 
 async def test_mark_notification_read_rejects_non_owner_and_unnotified(env):
     founds, service, session = env["founds"], env["service"], env["session"]
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
     rows = await stored(session)
 
     with pytest.raises(NotFoundError):
@@ -262,15 +262,15 @@ async def test_mark_notification_read_rejects_non_owner_and_unnotified(env):
 
 async def test_unread_hides_downgraded_and_closed_matches(env):
     founds, service, session = env["founds"], env["service"], env["session"]
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
 
     env["scores"]["high"] = 70.0
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
     assert await service.list_unread_notifications(env["owner"]) == []
     assert await service.list_unread_notifications(env["finder"]) == []
 
     env["scores"]["high"] = 90.0
-    await service.recalculate("lost", env["lost"].id, env["admin"])
+    await service.recalculate("lost", env["lost"].id, env["owner"])
     assert len(await service.list_unread_notifications(env["owner"])) == 1
 
     founds["high"].status = FoundReportStatus.CLOSED

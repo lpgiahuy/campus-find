@@ -96,6 +96,17 @@ def lost_body(**overrides):
     return body
 
 
+def found_body(**overrides):
+    body = {
+        "item_name": "Tai nghe",
+        "category_id": str(uuid.uuid4()),
+        "location_id": str(uuid.uuid4()),
+        "found_at": PAST,
+    }
+    body.update(overrides)
+    return body
+
+
 @pytest.fixture
 def mock_lost_service():
     return AsyncMock(spec=LostReportService)
@@ -239,13 +250,54 @@ async def test_create_returns_private(as_user, mock_lost_service):
     assert response.json()["data"]["private_identifiers"] == "Thẻ SV tên Nguyễn Văn A"
 
 
-async def test_create_triggers_matching_for_new_report(as_user, mock_lost_service, mock_matching_service):
+SIDES = [
+    ("lost", "/api/v1/lost-reports", make_lost, lost_body),
+    ("found", "/api/v1/found-reports", make_found, found_body),
+]
+
+
+@pytest.mark.parametrize(("side", "prefix", "make_report", "body"), SIDES)
+async def test_create_triggers_matching_for_new_report(
+    as_user,
+    mock_lost_service,
+    mock_found_service,
+    mock_matching_service,
+    side,
+    prefix,
+    make_report,
+    body,
+):
     owner = make_user()
-    report = make_lost(owner)
-    mock_lost_service.create.return_value = report
+    report = make_report(owner)
+    service = mock_lost_service if side == "lost" else mock_found_service
+    service.create.return_value = report
     async with as_user(owner) as client:
-        await client.post("/api/v1/lost-reports", json=lost_body())
-    mock_matching_service.recalculate.assert_awaited_once_with("lost", report.id, owner)
+        response = await client.post(prefix, json=body())
+    assert response.status_code == 201
+    mock_matching_service.recalculate.assert_awaited_once_with(side, report.id, owner)
+
+
+@pytest.mark.parametrize(("side", "prefix", "make_report", "body"), SIDES)
+async def test_patch_triggers_matching_for_updated_report(
+    as_user,
+    mock_lost_service,
+    mock_found_service,
+    mock_matching_service,
+    side,
+    prefix,
+    make_report,
+    body,
+):
+    owner = make_user()
+    report = make_report(owner)
+    service = mock_lost_service if side == "lost" else mock_found_service
+    service.update.return_value = report
+    async with as_user(owner) as client:
+        response = await client.patch(
+            f"{prefix}/{report.id}", json={"category_id": str(uuid.uuid4())}
+        )
+    assert response.status_code == 200
+    mock_matching_service.recalculate.assert_awaited_once_with(side, report.id, owner)
 
 
 @pytest.mark.parametrize(
