@@ -13,6 +13,7 @@ from app.shared.schemas import BaseSchema
 class ClaimScope(StrEnum):
     MINE = "mine"
     RECEIVED = "received"
+    ALL = "all"  # chỉ ADMIN
 
 
 class EvidenceCreate(BaseSchema):
@@ -36,6 +37,14 @@ class ClaimCreate(BaseSchema):
     reason: str = Field(min_length=1, max_length=2000)
     evidence: list[EvidenceCreate] = Field(default_factory=list, max_length=10)
     contact_consent: bool = False  # claimant đồng ý chia sẻ ngay khi tạo
+
+
+class ClaimApprove(BaseSchema):
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class ClaimReject(BaseSchema):
+    review_note: str = Field(min_length=1, max_length=2000)  # claimant cần biết lý do
 
 
 class EvidenceRead(BaseSchema):

@@ -13,9 +13,11 @@ from app.core.exceptions import (
 from app.db.models import Claim, ClaimEvidence, FoundReport, LostReport, User
 from app.modules.claims.repository import ClaimDetail, ClaimRepository
 from app.modules.claims.schemas import (
+    ClaimApprove,
     ClaimCreate,
     ClaimPrivate,
     ClaimPublic,
+    ClaimReject,
     ClaimScope,
     ContactInfo,
     EvidenceCreate,
@@ -28,6 +30,7 @@ from app.shared.service import BaseService
 from app.shared.utils import handle_unique_violation
 
 ACTIVE = {ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW}  # còn rút / thêm bằng chứng được
+REJECTABLE = ACTIVE | {ClaimStatus.APPROVED}  # APPROVED → REJECTED: gỡ khi hẹn trả đồ hỏng
 CONSENTABLE = ACTIVE | {ClaimStatus.APPROVED}
 CONTACT_VISIBLE = CONSENTABLE | {ClaimStatus.COMPLETED}  # bị từ chối / rút / hủy → ẩn lại
 
@@ -83,6 +86,8 @@ class ClaimService(BaseService):
         offset: int,
         limit: int,
     ) -> tuple[list[ClaimRead], int]:
+        if scope == ClaimScope.ALL and user.role != UserRole.ADMIN:
+            raise ForbiddenError("Chỉ ADMIN được xem toàn bộ yêu cầu")
         claims, total = await self.claims.list_for(user.id, scope, status, offset, limit)
         details = await self.claims.load_details(claims)
         return [self._to_read(d, user) for d in details], total
@@ -131,6 +136,48 @@ class ClaimService(BaseService):
         ):
             claim.contact_shared_at = datetime.now(UTC)
         return await self._read(claim, user)
+
+    async def approve(self, claim_id: UUID, data: ClaimApprove, admin: User) -> ClaimPrivate:
+        claim, found = await self.lock_for_decision(claim_id, admin, ACTIVE)
+        # Tin nhặt đang bị khóa nên hai ADMIN duyệt hai claim cùng lúc không cùng lọt qua đây.
+        if await self.claims.has_other_approved(found.id, claim.id):
+            raise ConflictError("Tin này đã có yêu cầu được duyệt — hãy từ chối yêu cầu đó trước")
+        self._review(claim, ClaimStatus.APPROVED, data.review_note, admin)
+        return await self._read(claim, admin)
+
+    async def reject(self, claim_id: UUID, data: ClaimReject, admin: User) -> ClaimPrivate:
+        claim = await self._lock(claim_id)  # không cần khóa tin nhặt: chỉ đổi claim
+        found = await self.founds.get_by_id(claim.found_report_id)
+        self._forbid_party(claim, found, admin)
+        self._ensure_status(claim, REJECTABLE)
+        self._review(claim, ClaimStatus.REJECTED, data.review_note, admin)
+        return await self._read(claim, admin)
+
+    async def lock_for_decision(
+        self, claim_id: UUID, admin: User, allowed: set[ClaimStatus]
+    ) -> tuple[Claim, FoundReport]:
+        """Duyệt / bàn giao: luôn khóa tin nhặt TRƯỚC claim (ngược thứ tự → deadlock)."""
+        claim = await self.claims.get_by_id(claim_id)
+        if claim is None:
+            raise NotFoundError("Yêu cầu nhận không tồn tại")
+        found = await self.founds.get_for_update(claim.found_report_id)  # found_report_id bất biến
+        claim = await self._lock(claim_id)
+        self._forbid_party(claim, found, admin)
+        self._ensure_status(claim, allowed)
+        if found.status != FoundReportStatus.OPEN:
+            raise ConflictError("Tin nhặt được đồ không còn mở")
+        return claim, found
+
+    @staticmethod
+    def _forbid_party(claim: Claim, found: FoundReport, admin: User) -> None:
+        if admin.id in (claim.claimant_id, found.user_id):  # xung đột lợi ích
+            raise ForbiddenError("ADMIN không được xử lý yêu cầu mà mình là một bên")
+
+    @staticmethod
+    def _review(claim: Claim, status: ClaimStatus, note: str | None, admin: User) -> None:
+        claim.status = status
+        claim.reviewed_by = admin.id
+        claim.review_note = note
 
     async def _lock(self, claim_id: UUID) -> Claim:
         claim = await self.claims.get_for_update(claim_id)
