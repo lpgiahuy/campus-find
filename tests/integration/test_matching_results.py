@@ -172,7 +172,6 @@ async def test_recalculate_from_found_side_reuses_same_row(env):
 async def test_owner_view_marks_seen_admin_view_does_not(env):
     founds, service, session = env["founds"], env["service"], env["session"]
     lost_id = env["lost"].id
-    # ADMIN chạy: chủ tin chưa nhận danh sách (owner recalculate tính là đã xem).
     await service.recalculate("lost", lost_id, env["admin"])
 
     await service.list("lost", lost_id, env["admin"])
@@ -215,3 +214,66 @@ async def test_access_and_state_errors(env):
     with pytest.raises(ConflictError):
         await service.recalculate("lost", lost.id, env["owner"])
     assert await service.list("lost", lost.id, env["admin"]) == []
+
+
+async def test_unread_notifications_for_both_owners_high_only(env):
+    founds, service = env["founds"], env["service"]
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+
+    for user, side, source_id, other_id in [
+        (env["owner"], "lost", env["lost"].id, founds["high"].id),
+        (env["finder"], "found", founds["high"].id, env["lost"].id),
+    ]:
+        items = await service.list_unread_notifications(user)
+        assert [(i.side, i.source_report_id, i.report.id) for i in items] == [(side, source_id, other_id)]
+        assert items[0].level == MatchLevel.HIGH
+        assert "contact_phone" not in items[0].model_dump_json()
+
+    assert await service.list_unread_notifications(env["stranger"]) == []
+
+
+async def test_mark_notification_read_is_idempotent_and_per_side(env):
+    founds, service, session = env["founds"], env["service"], env["session"]
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+    match_id = (await stored(session))[founds["high"].id].id
+
+    await service.mark_notification_read(match_id, env["owner"])
+    first_seen = (await stored(session))[founds["high"].id].lost_seen_at
+    await service.mark_notification_read(match_id, env["owner"])
+
+    row = (await stored(session))[founds["high"].id]
+    assert row.lost_seen_at == first_seen and row.found_seen_at is None
+    assert await service.list_unread_notifications(env["owner"]) == []
+    assert len(await service.list_unread_notifications(env["finder"])) == 1
+
+
+async def test_mark_notification_read_rejects_non_owner_and_unnotified(env):
+    founds, service, session = env["founds"], env["service"], env["session"]
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+    rows = await stored(session)
+
+    with pytest.raises(NotFoundError):
+        await service.mark_notification_read(rows[founds["high"].id].id, env["stranger"])
+    with pytest.raises(NotFoundError):
+        await service.mark_notification_read(rows[founds["medium"].id].id, env["owner"])
+    with pytest.raises(NotFoundError):
+        await service.mark_notification_read(uuid.uuid4(), env["owner"])
+
+
+async def test_unread_hides_downgraded_and_closed_matches(env):
+    founds, service, session = env["founds"], env["service"], env["session"]
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+
+    env["scores"]["high"] = 70.0
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+    assert await service.list_unread_notifications(env["owner"]) == []
+    assert await service.list_unread_notifications(env["finder"]) == []
+
+    env["scores"]["high"] = 90.0
+    await service.recalculate("lost", env["lost"].id, env["owner"])
+    assert len(await service.list_unread_notifications(env["owner"])) == 1
+
+    founds["high"].status = FoundReportStatus.CLOSED
+    await session.flush()
+    assert await service.list_unread_notifications(env["owner"]) == []
+    assert await service.list_unread_notifications(env["finder"]) == []

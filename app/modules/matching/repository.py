@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.db.models import FoundReport, LostReport, Match
+from app.modules.matching.engine.scorer import THRESHOLD_HIGH
 from app.shared.enums import FoundReportStatus, LostReportStatus
 from app.shared.repository import BaseRepository
 
@@ -40,6 +41,12 @@ SIDES: dict[str, SideConfig] = {
     "found": SideConfig(
         Match.found_report_id, Match.lost_report_id, LostReport, LostReportStatus.OPEN
     ),
+}
+
+
+SOURCE_MODELS = {
+    "lost": (LostReport, LostReportStatus.OPEN),
+    "found": (FoundReport, FoundReportStatus.OPEN),
 }
 
 
@@ -153,3 +160,43 @@ class MatchingRepository(BaseRepository[Match]):
             .values({seen.key: func.now()})
             .execution_options(synchronize_session=False)
         )
+
+    async def list_unread(
+        self, side: Side, user_id: UUID
+    ) -> list[tuple[Match, LostReport | FoundReport]]:
+        source_col, other_col, other_model, other_open = SIDES[side]
+        source_model, source_open = SOURCE_MODELS[side]
+        stmt = (
+            select(Match, other_model)
+            .join(source_model, source_model.id == source_col)
+            .join(other_model, other_model.id == other_col)
+            .where(
+                source_model.user_id == user_id,
+                source_model.status == source_open,
+                other_model.status == other_open,
+                Match.score >= THRESHOLD_HIGH,
+                getattr(Match, f"{side}_notified_at").is_not(None),
+                getattr(Match, f"{side}_seen_at").is_(None),
+            )
+            .order_by(Match.score.desc(), Match.id)
+        )
+        return [(match, other) for match, other in (await self.db.execute(stmt)).all()]
+
+    async def mark_read(self, side: Side, match_id: UUID, user_id: UUID) -> bool:
+        source_col = SIDES[side][0]
+        source_model = SOURCE_MODELS[side][0]
+        seen = getattr(Match, f"{side}_seen_at")
+        result = await self.db.execute(
+            update(Match)
+            .where(
+                Match.id == match_id,
+                getattr(Match, f"{side}_notified_at").is_not(None),
+                source_col.in_(
+                    select(source_model.id).where(source_model.user_id == user_id)
+                ),
+            )
+            .values({seen.key: func.coalesce(seen, func.now())})
+            .returning(Match.id)
+            .execution_options(synchronize_session=False)
+        )
+        return result.first() is not None
