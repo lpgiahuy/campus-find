@@ -10,13 +10,14 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.exceptions import (
     BusinessLogicError,
     ConflictError,
     ForbiddenError,
+    NotFoundError,
 )
 from app.db.base import Base
 from app.db.models import (
@@ -123,9 +124,19 @@ async def count(env, model) -> int:
     return (await env["session"].execute(select(func.count()).select_from(model))).scalar_one()
 
 
+async def set_status(env, claim_id, status: ClaimStatus):
+    """Thay việc duyệt của ADMIN (#15): đặt thẳng trạng thái, kèm reviewed_by theo ck_claim_reviewed_required."""
+    await env["session"].execute(
+        update(Claim)
+        .where(Claim.id == claim_id)
+        .values(status=status, reviewed_by=env["admin"].id)
+    )
+
+
 async def both_consent(env):
-    """Claimant tạo claim rồi hai bên cùng đồng ý; trả về claim id."""
+    """Claimant tạo claim, ADMIN duyệt, rồi hai bên cùng đồng ý; trả về claim id."""
     claim = await env["service"].create(body(env), env["claimant"])
+    await set_status(env, claim.id, ClaimStatus.APPROVED)
     await env["service"].consent(claim.id, env["claimant"])
     await env["service"].consent(claim.id, env["finder"])
     return claim.id
@@ -184,6 +195,7 @@ async def test_found_report_must_be_open(env):
 async def test_consent_reveals_contact_only_when_both_agree(env):
     service = env["service"]
     claim = await service.create(body(env), env["claimant"])
+    await set_status(env, claim.id, ClaimStatus.APPROVED)
 
     after_claimant = await service.consent(claim.id, env["claimant"])
     assert after_claimant.claimant_contact_consent
@@ -207,20 +219,39 @@ async def test_second_consent_keeps_shared_at(env):
     assert again.contact_shared_at == first
 
 
-async def test_consent_at_creation(env):
-    claim = await env["service"].create(body(env, contact_consent=True), env["claimant"])
-    assert claim.claimant_contact_consent
-    assert claim.contact_shared_at is None
+@pytest.mark.parametrize("status", [ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW])
+async def test_consent_blocked_before_approval(env, status):
+    claim = await env["service"].create(body(env), env["claimant"])
+    await set_status(env, claim.id, status)
+    for user in (env["claimant"], env["finder"]):
+        with pytest.raises(ConflictError):
+            await env["service"].consent(claim.id, user)
 
 
-async def test_withdraw_hides_contact_and_blocks_changes(env):
-    service = env["service"]
+@pytest.mark.parametrize("status", [ClaimStatus.REJECTED, ClaimStatus.CANCELLED])
+async def test_contact_hidden_when_claim_no_longer_approved(env, status):
     claim_id = await both_consent(env)
+    assert (await env["service"].get(claim_id, env["finder"])).contact is not None
+
+    await set_status(env, claim_id, status)
+    hidden = await env["service"].get(claim_id, env["finder"])
+    assert hidden.contact is None
+    assert hidden.contact_shared_at is not None  # cờ giữ nguyên, chỉ ẩn số
+
+
+async def test_contact_stays_visible_after_completed(env):
+    claim_id = await both_consent(env)
+    await set_status(env, claim_id, ClaimStatus.COMPLETED)
+    assert (await env["service"].get(claim_id, env["claimant"])).contact is not None
+
+
+async def test_withdraw_blocks_further_changes(env):
+    service = env["service"]
+    claim = await service.create(body(env), env["claimant"])
+    claim_id = claim.id
 
     withdrawn = await service.withdraw(claim_id, env["claimant"])
     assert withdrawn.status == ClaimStatus.WITHDRAWN
-    assert withdrawn.contact is None
-    assert withdrawn.contact_shared_at is not None  # đã chia sẻ thì giữ dấu vết
 
     for call in (
         service.add_evidence(claim_id, EvidenceCreate(evidence_text="thêm"), env["claimant"]),
@@ -244,16 +275,35 @@ async def test_add_evidence(env):
         )
 
 
-async def test_consent_requires_phone(env):
-    claim = await env["service"].create(
-        body(env, found_report_id=env["found"].id), env["nophone"]
+async def test_evidence_limit_per_claim(env):
+    service = env["service"]
+    claim = await service.create(
+        body(env, evidence=[{"evidence_text": f"chi tiết {i}"} for i in range(10)]),
+        env["claimant"],
     )
+    with pytest.raises(ConflictError):
+        await service.add_evidence(
+            claim.id, EvidenceCreate(evidence_text="thứ 11"), env["claimant"]
+        )
+    assert await count(env, ClaimEvidence) == 10
+
+
+async def test_unknown_claim_is_not_found(env):
+    missing = uuid.uuid4()
+    for call in (
+        env["service"].get(missing, env["claimant"]),
+        env["service"].consent(missing, env["claimant"]),
+        env["service"].withdraw(missing, env["claimant"]),
+    ):
+        with pytest.raises(NotFoundError):
+            await call
+
+
+async def test_consent_requires_phone(env):
+    claim = await env["service"].create(body(env), env["nophone"])
+    await set_status(env, claim.id, ClaimStatus.APPROVED)
     with pytest.raises(BusinessLogicError):
         await env["service"].consent(claim.id, env["nophone"])
-    with pytest.raises(BusinessLogicError):
-        await env["service"].create(
-            body(env, found_report_id=env["found"].id, contact_consent=True), env["nophone"]
-        )
 
 
 async def test_consent_only_for_the_two_parties(env):
@@ -270,7 +320,8 @@ async def test_finder_sees_no_reason_or_evidence(env):
     seen = await env["service"].get(claim.id, env["finder"])
     assert isinstance(seen, ClaimPublic) and not isinstance(seen, ClaimPrivate)
     dumped = seen.model_dump()
-    assert not {"reason", "evidence", "lost_report_id", "claimant_id"} & dumped.keys()
+    hidden = {"reason", "evidence", "review_note", "lost_report_id", "claimant_id"}
+    assert not hidden & dumped.keys()
 
 
 async def test_claimant_does_not_see_finder_private_fields(env):

@@ -41,6 +41,10 @@ class ClaimRepository(BaseRepository[Claim]):
         row = (await self.db.execute(stmt)).one_or_none()
         return None if row is None else (row[0], row[1])
 
+    async def count_evidence(self, claim_id: UUID) -> int:
+        stmt = select(func.count()).select_from(ClaimEvidence).where(ClaimEvidence.claim_id == claim_id)
+        return (await self.db.execute(stmt)).scalar_one()
+
     async def list_for(
         self,
         user_id: UUID,

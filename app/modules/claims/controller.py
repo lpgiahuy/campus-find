@@ -61,10 +61,10 @@ async def list_claims(
     user: CurrentUser,
     service: Service,
     scope: Annotated[ClaimScope, Query()] = ClaimScope.MINE,
-    status: Annotated[ClaimStatus | None, Query()] = None,
+    claim_status: Annotated[ClaimStatus | None, Query(alias="status")] = None,
 ):
     items, total = await service.list(
-        user, scope, status, pagination.offset, pagination.page_size
+        user, scope, claim_status, pagination.offset, pagination.page_size
     )
     return PaginatedResponse(
         data=PaginatedData(
