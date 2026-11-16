@@ -184,6 +184,8 @@ async def test_handover_updates_every_table_and_cancels_the_rest(env):
     assert await status_of(env, LostReport, env["lost"].id) == LostReportStatus.RESOLVED
     assert await status_of(env, Claim, c2) == ClaimStatus.CANCELLED
     assert await status_of(env, Claim, c3) == ClaimStatus.CANCELLED
+    cancelled = await env["session"].get(Claim, c3)
+    assert cancelled.reviewed_by == env["admin"].id and cancelled.review_note  # claimant biết lý do
     seen = await env["claims"].get(c1, env["claimant"])
     assert seen.status == ClaimStatus.COMPLETED
 
@@ -214,9 +216,9 @@ async def test_second_handover_for_same_found_report_conflicts(env):
 
 async def test_handover_keeps_closed_lost_report_and_blocks_party_admin(env):
     c1 = await env["claim"]("claimant", "found", "lost")
-    env["lost"].status = LostReportStatus.CLOSED
-    await env["session"].flush()
     await env["claims"].approve(c1, ClaimApprove(), env["admin"])
+    env["lost"].status = LostReportStatus.CLOSED  # chủ tin tự đóng sau khi duyệt
+    await env["session"].flush()
     await env["handovers"].create(handover(c1), env["admin"])
     assert await status_of(env, LostReport, env["lost"].id) == LostReportStatus.CLOSED
 
@@ -224,3 +226,17 @@ async def test_handover_keeps_closed_lost_report_and_blocks_party_admin(env):
     await env["claims"].approve(mine, ClaimApprove(), env["admin"])
     with pytest.raises(ForbiddenError):  # Q6
         await env["handovers"].create(handover(mine), env["admin2"])
+
+
+async def test_approve_and_reject_need_open_reports(env):
+    c1 = await env["claim"]("claimant", "found", "lost")
+    env["lost"].status = LostReportStatus.CLOSED
+    await env["session"].flush()
+    with pytest.raises(ConflictError):  # tin mất liên kết đã đóng
+        await env["claims"].approve(c1, ClaimApprove(), env["admin"])
+
+    c2 = await env["claim"]("other", "found")
+    env["found"].status = FoundReportStatus.CLOSED
+    await env["session"].flush()
+    with pytest.raises(ConflictError):  # tin nhặt đã đóng
+        await env["claims"].reject(c2, ClaimReject(review_note="x"), env["admin"])

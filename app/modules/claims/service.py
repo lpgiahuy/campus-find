@@ -138,35 +138,52 @@ class ClaimService(BaseService):
         return await self._read(claim, user)
 
     async def approve(self, claim_id: UUID, data: ClaimApprove, admin: User) -> ClaimPrivate:
-        claim, found = await self.lock_for_decision(claim_id, admin, ACTIVE)
-        # Tin nhặt đang bị khóa nên hai ADMIN duyệt hai claim cùng lúc không cùng lọt qua đây.
+        claim, found, lost = await self.lock_for_decision(claim_id, admin, ACTIVE)
+        if lost is not None and lost.status != LostReportStatus.OPEN:
+            raise ConflictError("Tin mất đồ liên kết không còn mở")
+        # Tin nhặt đang bị khóa nên hai ADMIN duyệt hai claim cùng lúc không cùng lọt qua đây;
+        # index uq_claims_one_approved_per_found chặn nốt đường code không qua khóa này.
         if await self.claims.has_other_approved(found.id, claim.id):
             raise ConflictError("Tin này đã có yêu cầu được duyệt — hãy từ chối yêu cầu đó trước")
-        self._review(claim, ClaimStatus.APPROVED, data.review_note, admin)
-        return await self._read(claim, admin)
+        async with handle_unique_violation("Tin này đã có yêu cầu được duyệt"):
+            self._review(claim, ClaimStatus.APPROVED, data.review_note, admin)
+            return await self._read(claim, admin)
 
     async def reject(self, claim_id: UUID, data: ClaimReject, admin: User) -> ClaimPrivate:
-        claim = await self._lock(claim_id)  # không cần khóa tin nhặt: chỉ đổi claim
-        found = await self.founds.get_by_id(claim.found_report_id)
-        self._forbid_party(claim, found, admin)
-        self._ensure_status(claim, REJECTABLE)
+        claim, _, _ = await self.lock_for_decision(claim_id, admin, REJECTABLE)
         self._review(claim, ClaimStatus.REJECTED, data.review_note, admin)
         return await self._read(claim, admin)
 
     async def lock_for_decision(
         self, claim_id: UUID, admin: User, allowed: set[ClaimStatus]
-    ) -> tuple[Claim, FoundReport]:
-        """Duyệt / bàn giao: luôn khóa tin nhặt TRƯỚC claim (ngược thứ tự → deadlock)."""
-        claim = await self.claims.get_by_id(claim_id)
-        if claim is None:
+    ) -> tuple[Claim, FoundReport, LostReport | None]:
+        """Duyệt / từ chối / bàn giao: luôn khóa tin nhặt → tin mất → claim.
+
+        Mọi đường đều theo thứ tự này, nếu không hai bàn giao cùng tin mất sẽ deadlock
+        (cancel_others chạm claim của đường kia). found_report_id / lost_report_id bất biến.
+        """
+        ids = await self.claims.get_report_ids(claim_id)
+        if ids is None:
             raise NotFoundError("Yêu cầu nhận không tồn tại")
-        found = await self.founds.get_for_update(claim.found_report_id)  # found_report_id bất biến
+        found_id, lost_id = ids
+        found = await self.founds.get_for_update(found_id)
+        lost = await self.losts.get_for_update(lost_id) if lost_id else None
         claim = await self._lock(claim_id)
         self._forbid_party(claim, found, admin)
         self._ensure_status(claim, allowed)
         if found.status != FoundReportStatus.OPEN:
             raise ConflictError("Tin nhặt được đồ không còn mở")
-        return claim, found
+        return claim, found, lost
+
+    async def complete(
+        self, claim: Claim, found: FoundReport, lost: LostReport | None, admin: User
+    ) -> None:
+        """Bàn giao xong: claim COMPLETED, tin nhặt RETURNED, tin mất RESOLVED, hủy claim khác."""
+        claim.status = ClaimStatus.COMPLETED
+        found.status = FoundReportStatus.RETURNED
+        if lost is not None and lost.status == LostReportStatus.OPEN:  # CLOSED: chủ tin tự đóng
+            lost.status = LostReportStatus.RESOLVED
+        await self.claims.cancel_others(claim, admin.id)
 
     @staticmethod
     def _forbid_party(claim: Claim, found: FoundReport, admin: User) -> None:

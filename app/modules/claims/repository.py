@@ -36,6 +36,11 @@ class ClaimRepository(BaseRepository[Claim]):
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_report_ids(self, claim_id: UUID) -> tuple[UUID, UUID | None] | None:
+        stmt = select(Claim.found_report_id, Claim.lost_report_id).where(Claim.id == claim_id)
+        row = (await self.db.execute(stmt)).one_or_none()
+        return None if row is None else (row[0], row[1])
+
     async def list_for(
         self,
         user_id: UUID,
@@ -72,7 +77,7 @@ class ClaimRepository(BaseRepository[Claim]):
         )
         return (await self.db.execute(stmt)).scalar_one()
 
-    async def cancel_others(self, claim: Claim) -> None:
+    async def cancel_others(self, claim: Claim, admin_id: UUID) -> None:
         """Hủy claim còn sống trên cùng tin nhặt / cùng tin mất của claim vừa bàn giao."""
         same_report = [Claim.found_report_id == claim.found_report_id]
         if claim.lost_report_id is not None:
@@ -84,7 +89,11 @@ class ClaimRepository(BaseRepository[Claim]):
                 Claim.status.in_(CANCELLABLE),
                 or_(*same_report),
             )
-            .values(status=ClaimStatus.CANCELLED)
+            .values(
+                status=ClaimStatus.CANCELLED,
+                reviewed_by=admin_id,
+                review_note="Vật đã được bàn giao cho yêu cầu khác",
+            )
             .execution_options(synchronize_session="fetch")
         )
 

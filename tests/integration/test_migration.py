@@ -25,6 +25,6 @@ def test_initial_migration(monkeypatch):
         assert set(inspect(engine).get_table_names()) == expected | {'alembic_version'}
         with engine.connect() as conn:
             assert conn.scalar(text('select count(*) from pg_trigger where not tgisinternal and tgname like :name'), {'name': 'tr_%'}) >= 6
-            assert conn.scalar(text('select version_num from alembic_version')) == '0001_initial'
+            assert conn.scalar(text('select version_num from alembic_version')) == '0002_one_approved_claim'
     finally:
         engine.dispose()
