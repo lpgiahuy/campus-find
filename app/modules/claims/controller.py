@@ -110,3 +110,15 @@ async def consent_claim(id: UUID, user: CurrentUser, service: Service):
         message="Đã ghi nhận đồng ý chia sẻ liên hệ",
         data=await service.consent(id, user),
     )
+
+
+@router.post(
+    "/{id}/consent/decline",
+    response_model=ApiResponse[ReadSchema],
+    summary="Từ chối / thu hồi đồng ý chia sẻ liên hệ (chỉ khi số chưa được chia sẻ)",
+)
+async def decline_consent(id: UUID, user: CurrentUser, service: Service):
+    return ApiResponse(
+        message="Đã ghi nhận không chia sẻ liên hệ",
+        data=await service.decline_consent(id, user),
+    )
