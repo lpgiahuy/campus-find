@@ -118,15 +118,7 @@ class ClaimService(BaseService):
         return await self._read(claim, user)
 
     async def consent(self, claim_id: UUID, user: User) -> ClaimRead:
-        # Kiểm tra người trong cuộc trước khi khóa: người ngoài không giữ được lock dòng claim.
-        claim = await self._get(claim_id)
-        found = await self.founds.get_by_id(claim.found_report_id)
-        if user.id == claim.claimant_id:
-            flag = "claimant_contact_consent"
-        elif user.id == found.user_id:
-            flag = "finder_contact_consent"
-        else:  # kể cả ADMIN: chỉ hai bên được chia sẻ liên hệ của mình
-            raise ForbiddenError("Chỉ người gửi yêu cầu hoặc người nhặt được đồng ý chia sẻ")
+        flag = await self._consent_flag(claim_id, user)
         claim = await self._lock(claim_id)  # đọc lại trạng thái mới nhất trên dòng đã khóa
         self._ensure_status(claim, CONSENTABLE)
         self._require_phone(user)
@@ -198,6 +190,28 @@ class ClaimService(BaseService):
         claim.status = status
         claim.reviewed_by = admin.id
         claim.review_note = note
+
+    async def decline_consent(self, claim_id: UUID, user: User) -> ClaimRead:
+        """Từ chối / thu hồi đồng ý của chính mình; không còn tác dụng khi số đã được chia sẻ."""
+        flag = await self._consent_flag(claim_id, user)
+        claim = await self._lock(claim_id)
+        self._ensure_status(claim, CONSENTABLE)
+        if claim.contact_shared_at is not None:
+            raise ConflictError("Liên hệ đã được chia sẻ, không thể thu hồi đồng ý")
+        setattr(claim, flag, False)  # chưa đồng ý thì giữ nguyên, không lỗi
+        return await self._read(claim, user)
+
+    async def _consent_flag(self, claim_id: UUID, user: User) -> str:
+        """Cờ consent của người gọi. Kiểm tra người trong cuộc trước khi khóa:
+        người ngoài không giữ được lock dòng claim."""
+        claim = await self._get(claim_id)
+        found = await self.founds.get_by_id(claim.found_report_id)
+        if user.id == claim.claimant_id:
+            return "claimant_contact_consent"
+        if user.id == found.user_id:
+            return "finder_contact_consent"
+        # kể cả ADMIN: chỉ hai bên được quyết định chia sẻ liên hệ của mình
+        raise ForbiddenError("Chỉ người gửi yêu cầu hoặc người nhặt được quyết định chia sẻ liên hệ")
 
     async def _get(self, claim_id: UUID) -> Claim:
         claim = await self.claims.get_by_id(claim_id)

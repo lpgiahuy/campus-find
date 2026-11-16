@@ -105,9 +105,10 @@ async def test_requires_login():
             await c.post(f"{BASE}/{cid}/evidence", json={}),
             await c.post(f"{BASE}/{cid}/withdraw"),
             await c.post(f"{BASE}/{cid}/consent"),
+            await c.post(f"{BASE}/{cid}/consent/decline"),
         ]
     app.dependency_overrides.clear()
-    assert [r.status_code for r in responses] == [401] * 6
+    assert [r.status_code for r in responses] == [401] * 7
 
 
 @pytest.mark.parametrize(
@@ -159,7 +160,14 @@ async def test_list_rejects_bad_scope_and_status(client, service):
     ],
 )
 async def test_service_errors_map_to_status(client, service, error, code):
-    for method in ("create", "get", "add_evidence", "withdraw", "consent"):
+    for method in (
+        "create",
+        "get",
+        "add_evidence",
+        "withdraw",
+        "consent",
+        "decline_consent",
+    ):
         getattr(service, method).side_effect = error
     cid = uuid.uuid4()
     async with client as c:
@@ -169,8 +177,9 @@ async def test_service_errors_map_to_status(client, service, error, code):
             await c.post(f"{BASE}/{cid}/evidence", json={"evidence_text": "x"}),
             await c.post(f"{BASE}/{cid}/withdraw"),
             await c.post(f"{BASE}/{cid}/consent"),
+            await c.post(f"{BASE}/{cid}/consent/decline"),
         ]
-    assert [r.status_code for r in responses] == [code] * 5
+    assert [r.status_code for r in responses] == [code] * 6
 
 
 async def test_create_success(client, service):
@@ -188,6 +197,14 @@ async def test_detail_for_finder_hides_private_keys(client, service):
         response = await c.get(f"{BASE}/{uuid.uuid4()}")
     assert response.status_code == 200
     assert not {"reason", "evidence", "review_note", "found_report"} & response.json()["data"].keys()
+
+
+async def test_decline_consent_success(client, service):
+    service.decline_consent.return_value = ClaimPublic(**public_fields())
+    async with client as c:
+        response = await c.post(f"{BASE}/{uuid.uuid4()}/consent/decline")
+    assert response.status_code == 200
+    assert response.json()["data"]["claimant_contact_consent"] is False
 
 
 async def test_list_returns_both_shapes(client, service):

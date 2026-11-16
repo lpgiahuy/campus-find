@@ -219,6 +219,55 @@ async def test_second_consent_keeps_shared_at(env):
     assert again.contact_shared_at == first
 
 
+async def test_decline_before_other_side_consents(env):
+    service = env["service"]
+    claim = await service.create(body(env), env["claimant"])
+    await set_status(env, claim.id, ClaimStatus.APPROVED)
+    await service.consent(claim.id, env["claimant"])
+
+    declined = await service.decline_consent(claim.id, env["claimant"])
+    assert not declined.claimant_contact_consent
+    again = await service.decline_consent(claim.id, env["claimant"])  # idempotent
+    assert again.contact_shared_at is None
+
+    # Finder đồng ý sau khi claimant đã đổi ý: không chia sẻ.
+    after_finder = await service.consent(claim.id, env["finder"])
+    assert after_finder.contact_shared_at is None and after_finder.contact is None
+
+
+async def test_finder_can_decline_and_reconsent(env):
+    service = env["service"]
+    claim = await service.create(body(env), env["claimant"])
+    await set_status(env, claim.id, ClaimStatus.APPROVED)
+    await service.consent(claim.id, env["finder"])
+    await service.decline_consent(claim.id, env["finder"])
+    await service.consent(claim.id, env["claimant"])  # finder đã rút nên chưa đủ hai bên
+    assert (await service.get(claim.id, env["claimant"])).contact_shared_at is None
+    shared = await service.consent(claim.id, env["finder"])
+    assert shared.contact_shared_at is not None
+
+
+async def test_decline_rejected_after_contact_shared(env):
+    claim_id = await both_consent(env)
+    for user in (env["claimant"], env["finder"]):
+        with pytest.raises(ConflictError):
+            await env["service"].decline_consent(claim_id, user)
+    seen = await env["service"].get(claim_id, env["claimant"])
+    assert seen.claimant_contact_consent and seen.finder_contact_consent
+
+
+async def test_decline_guards(env):
+    service = env["service"]
+    claim = await service.create(body(env), env["claimant"])
+    with pytest.raises(ConflictError):  # chưa duyệt
+        await service.decline_consent(claim.id, env["claimant"])
+    for outsider in (env["nophone"], env["admin"]):
+        with pytest.raises(ForbiddenError):
+            await service.decline_consent(claim.id, outsider)
+    with pytest.raises(NotFoundError):
+        await service.decline_consent(uuid.uuid4(), env["claimant"])
+
+
 @pytest.mark.parametrize("status", [ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW])
 async def test_consent_blocked_before_approval(env, status):
     claim = await env["service"].create(body(env), env["claimant"])
