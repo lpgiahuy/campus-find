@@ -117,6 +117,7 @@ async def test_requires_login():
         {"reason": "   "},
         {"found_report_id": "không-phải-uuid"},
         {"status": "APPROVED"},  # field lạ
+        {"contact_consent": True},  # chỉ consent được sau khi duyệt, qua /consent
         {"evidence": [{"evidence_text": "  "}]},
         {"evidence": [{"evidence_text": "x"}] * 11},
         {"evidence": [{"evidence_text": "x", "file_reference": "javascript:alert(1)"}]},
@@ -175,11 +176,10 @@ async def test_service_errors_map_to_status(client, service, error, code):
 async def test_create_success(client, service):
     service.create.return_value = make_private()
     async with client as c:
-        response = await c.post(BASE, json=create_body(contact_consent=True))
+        response = await c.post(BASE, json=create_body())
     assert response.status_code == 201
     body = response.json()
     assert body["success"] is True and body["data"]["reason"] == "Ví của tôi"
-    assert service.create.await_args.args[0].contact_consent is True
 
 
 async def test_detail_for_finder_hides_private_keys(client, service):

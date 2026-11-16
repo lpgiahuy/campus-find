@@ -40,7 +40,6 @@ class ClaimCreate(BaseSchema):
     lost_report_id: UUID | None = None
     reason: str = Field(min_length=1, max_length=2000)
     evidence: list[EvidenceCreate] = Field(default_factory=list, max_length=MAX_EVIDENCE)
-    contact_consent: bool = False  # claimant đồng ý chia sẻ ngay khi tạo
 
 
 class EvidenceRead(BaseSchema):

@@ -29,8 +29,9 @@ from app.shared.service import BaseService
 from app.shared.utils import handle_unique_violation
 
 ACTIVE = {ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW}  # còn rút / thêm bằng chứng được
-CONSENTABLE = ACTIVE | {ClaimStatus.APPROVED}
-CONTACT_VISIBLE = CONSENTABLE | {ClaimStatus.COMPLETED}  # bị từ chối / rút / hủy → ẩn lại
+# Chỉ chia sẻ liên hệ sau khi ADMIN đã duyệt (đã thẩm định bằng chứng); rút / từ chối / hủy → ẩn lại.
+CONSENTABLE = {ClaimStatus.APPROVED}
+CONTACT_VISIBLE = {ClaimStatus.APPROVED, ClaimStatus.COMPLETED}
 
 ClaimRead = ClaimPrivate | ClaimPublic
 
@@ -59,8 +60,6 @@ class ClaimService(BaseService):
                 raise BusinessLogicError("Tin mất đồ không phải của bạn")
             if lost.status != LostReportStatus.OPEN:
                 raise ConflictError("Tin mất đồ không còn mở")
-        if data.contact_consent:
-            self._require_phone(user)
 
         # Trùng claim: chặn bởi uq_claim_claimant_found, bắt cả khi hai request chạy song song.
         async with handle_unique_violation("Bạn đã gửi yêu cầu nhận cho tin này"):
@@ -69,7 +68,6 @@ class ClaimService(BaseService):
                 lost_report_id=data.lost_report_id,
                 claimant_id=user.id,
                 reason=data.reason,
-                claimant_contact_consent=data.contact_consent,
             )
             await self.claims.create(claim)
             self.db.add_all([self._evidence(claim.id, e) for e in data.evidence])
