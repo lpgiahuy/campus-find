@@ -17,6 +17,7 @@ from app.core.exceptions import (
     BusinessLogicError,
     ConflictError,
     ForbiddenError,
+    NotFoundError,
 )
 from app.db.base import Base
 from app.db.models import (
@@ -244,6 +245,30 @@ async def test_add_evidence(env):
         )
 
 
+async def test_evidence_limit_per_claim(env):
+    service = env["service"]
+    claim = await service.create(
+        body(env, evidence=[{"evidence_text": f"chi tiết {i}"} for i in range(10)]),
+        env["claimant"],
+    )
+    with pytest.raises(ConflictError):
+        await service.add_evidence(
+            claim.id, EvidenceCreate(evidence_text="thứ 11"), env["claimant"]
+        )
+    assert await count(env, ClaimEvidence) == 10
+
+
+async def test_unknown_claim_is_not_found(env):
+    missing = uuid.uuid4()
+    for call in (
+        env["service"].get(missing, env["claimant"]),
+        env["service"].consent(missing, env["claimant"]),
+        env["service"].withdraw(missing, env["claimant"]),
+    ):
+        with pytest.raises(NotFoundError):
+            await call
+
+
 async def test_consent_requires_phone(env):
     claim = await env["service"].create(
         body(env, found_report_id=env["found"].id), env["nophone"]
@@ -270,7 +295,8 @@ async def test_finder_sees_no_reason_or_evidence(env):
     seen = await env["service"].get(claim.id, env["finder"])
     assert isinstance(seen, ClaimPublic) and not isinstance(seen, ClaimPrivate)
     dumped = seen.model_dump()
-    assert not {"reason", "evidence", "lost_report_id", "claimant_id"} & dumped.keys()
+    hidden = {"reason", "evidence", "review_note", "lost_report_id", "claimant_id"}
+    assert not hidden & dumped.keys()
 
 
 async def test_claimant_does_not_see_finder_private_fields(env):

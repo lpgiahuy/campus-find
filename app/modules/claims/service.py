@@ -13,6 +13,7 @@ from app.core.exceptions import (
 from app.db.models import Claim, ClaimEvidence, FoundReport, LostReport, User
 from app.modules.claims.repository import ClaimDetail, ClaimRepository
 from app.modules.claims.schemas import (
+    MAX_EVIDENCE,
     ClaimCreate,
     ClaimPrivate,
     ClaimPublic,
@@ -103,6 +104,8 @@ class ClaimService(BaseService):
         self, claim_id: UUID, data: EvidenceCreate, user: User
     ) -> ClaimPrivate:
         claim = await self._lock_as_claimant(claim_id, user, ACTIVE)
+        if await self.claims.count_evidence(claim.id) >= MAX_EVIDENCE:
+            raise ConflictError(f"Mỗi yêu cầu chỉ có tối đa {MAX_EVIDENCE} bằng chứng")
         self.db.add(self._evidence(claim.id, data))
         return await self._read(claim, user)
 
@@ -112,7 +115,8 @@ class ClaimService(BaseService):
         return await self._read(claim, user)
 
     async def consent(self, claim_id: UUID, user: User) -> ClaimRead:
-        claim = await self._lock(claim_id)
+        # Kiểm tra người trong cuộc trước khi khóa: người ngoài không giữ được lock dòng claim.
+        claim = await self._get(claim_id)
         found = await self.founds.get_by_id(claim.found_report_id)
         if user.id == claim.claimant_id:
             flag = "claimant_contact_consent"
@@ -120,6 +124,7 @@ class ClaimService(BaseService):
             flag = "finder_contact_consent"
         else:  # kể cả ADMIN: chỉ hai bên được chia sẻ liên hệ của mình
             raise ForbiddenError("Chỉ người gửi yêu cầu hoặc người nhặt được đồng ý chia sẻ")
+        claim = await self._lock(claim_id)  # đọc lại trạng thái mới nhất trên dòng đã khóa
         self._ensure_status(claim, CONSENTABLE)
         self._require_phone(user)
 
@@ -132,6 +137,12 @@ class ClaimService(BaseService):
             claim.contact_shared_at = datetime.now(UTC)
         return await self._read(claim, user)
 
+    async def _get(self, claim_id: UUID) -> Claim:
+        claim = await self.claims.get_by_id(claim_id)
+        if claim is None:
+            raise NotFoundError("Yêu cầu nhận không tồn tại")
+        return claim
+
     async def _lock(self, claim_id: UUID) -> Claim:
         claim = await self.claims.get_for_update(claim_id)
         if claim is None:
@@ -141,9 +152,9 @@ class ClaimService(BaseService):
     async def _lock_as_claimant(
         self, claim_id: UUID, user: User, allowed: set[ClaimStatus]
     ) -> Claim:
-        claim = await self._lock(claim_id)
-        if claim.claimant_id != user.id:
+        if (await self._get(claim_id)).claimant_id != user.id:
             raise ForbiddenError("Chỉ người gửi yêu cầu được thực hiện thao tác này")
+        claim = await self._lock(claim_id)
         self._ensure_status(claim, allowed)
         return claim
 

@@ -9,6 +9,8 @@ from app.modules.reports.schemas import FoundReportPublic
 from app.shared.enums import ClaimStatus
 from app.shared.schemas import BaseSchema
 
+MAX_EVIDENCE = 10
+
 
 class ClaimScope(StrEnum):
     MINE = "mine"
@@ -25,6 +27,9 @@ class EvidenceCreate(BaseSchema):
     @field_validator("file_reference")
     @classmethod
     def blank_to_none(cls, v: str | None) -> str | None:
+        # Chỉ nhận link http(s): UI có thể render thành <a>, chặn javascript: / data:.
+        if v and not v.lower().startswith(("http://", "https://")):
+            raise ValueError("file_reference phải là đường dẫn http(s)")
         return v or None
 
 
@@ -34,7 +39,7 @@ class ClaimCreate(BaseSchema):
     found_report_id: UUID
     lost_report_id: UUID | None = None
     reason: str = Field(min_length=1, max_length=2000)
-    evidence: list[EvidenceCreate] = Field(default_factory=list, max_length=10)
+    evidence: list[EvidenceCreate] = Field(default_factory=list, max_length=MAX_EVIDENCE)
     contact_consent: bool = False  # claimant đồng ý chia sẻ ngay khi tạo
 
 

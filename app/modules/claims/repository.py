@@ -25,8 +25,17 @@ class ClaimRepository(BaseRepository[Claim]):
 
     async def get_for_update(self, claim_id: UUID) -> Claim | None:
         """Khóa dòng tới hết transaction: consent hai bên cùng lúc không bỏ sót, #15 dùng lại."""
-        stmt = select(Claim).where(Claim.id == claim_id).with_for_update()
+        stmt = (
+            select(Claim)
+            .where(Claim.id == claim_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)  # bỏ bản đã đọc trước khi khóa
+        )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def count_evidence(self, claim_id: UUID) -> int:
+        stmt = select(func.count()).select_from(ClaimEvidence).where(ClaimEvidence.claim_id == claim_id)
+        return (await self.db.execute(stmt)).scalar_one()
 
     async def list_for(
         self,

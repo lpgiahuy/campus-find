@@ -119,6 +119,7 @@ async def test_requires_login():
         {"status": "APPROVED"},  # field lạ
         {"evidence": [{"evidence_text": "  "}]},
         {"evidence": [{"evidence_text": "x"}] * 11},
+        {"evidence": [{"evidence_text": "x", "file_reference": "javascript:alert(1)"}]},
     ],
 )
 async def test_create_invalid_payload(client, service, overrides):
@@ -126,6 +127,17 @@ async def test_create_invalid_payload(client, service, overrides):
         response = await c.post(BASE, json=create_body(**overrides))
     assert response.status_code == 422
     service.create.assert_not_called()
+
+
+async def test_evidence_link_must_be_http(client, service):
+    cid = uuid.uuid4()
+    async with client as c:
+        bad = await c.post(
+            f"{BASE}/{cid}/evidence",
+            json={"evidence_text": "x", "file_reference": "data:text/html,<script>"},
+        )
+    assert bad.status_code == 422
+    service.add_evidence.assert_not_called()
 
 
 async def test_list_rejects_bad_scope_and_status(client, service):
@@ -170,12 +182,21 @@ async def test_create_success(client, service):
     assert service.create.await_args.args[0].contact_consent is True
 
 
+async def test_detail_for_finder_hides_private_keys(client, service):
+    service.get.return_value = ClaimPublic(**public_fields())
+    async with client as c:
+        response = await c.get(f"{BASE}/{uuid.uuid4()}")
+    assert response.status_code == 200
+    assert not {"reason", "evidence", "review_note", "found_report"} & response.json()["data"].keys()
+
+
 async def test_list_returns_both_shapes(client, service):
     service.list.return_value = ([make_private(), ClaimPublic(**public_fields())], 2)
     async with client as c:
         response = await c.get(BASE, params={"scope": "received"})
     assert response.status_code == 200
     private, public = response.json()["data"]["items"]
-    assert "reason" in private and "reason" not in public
+    assert "reason" in private
+    assert not {"reason", "evidence", "review_note", "found_report"} & public.keys()
     assert response.json()["data"]["total"] == 2
     assert service.list.await_args.args[1] == "received"
