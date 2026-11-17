@@ -4,12 +4,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.dependencies import get_current_user, get_pagination, get_service
+from app.core.dependencies import (
+    get_current_user,
+    get_pagination,
+    get_service,
+    require_admin,
+)
 from app.db.models import User
 from app.modules.claims.schemas import (
+    ClaimApprove,
     ClaimCreate,
     ClaimPrivate,
     ClaimPublic,
+    ClaimReject,
     ClaimScope,
     EvidenceCreate,
 )
@@ -27,6 +34,7 @@ router = APIRouter(prefix="/claims", tags=["Claims"])
 
 Service = Annotated[ClaimService, Depends(get_service(ClaimService))]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+Admin = Annotated[User, Depends(require_admin)]
 # Finder thấy dạng Public (không có reason / bằng chứng); claimant / ADMIN thấy Private.
 ReadSchema = ClaimPrivate | ClaimPublic
 
@@ -46,7 +54,7 @@ async def create_claim(data: ClaimCreate, user: CurrentUser, service: Service):
 @router.get(
     "",
     response_model=PaginatedResponse[ReadSchema],
-    summary="Danh sách yêu cầu: mine = tôi gửi, received = trên tin nhặt của tôi",
+    summary="Danh sách yêu cầu: mine = tôi gửi, received = trên tin nhặt của tôi, all = ADMIN",
 )
 async def list_claims(
     pagination: Annotated[PaginationParams, Depends(get_pagination)],
@@ -110,6 +118,27 @@ async def consent_claim(id: UUID, user: CurrentUser, service: Service):
         message="Đã ghi nhận đồng ý chia sẻ liên hệ",
         data=await service.consent(id, user),
     )
+
+
+@router.post(
+    "/{id}/approve",
+    response_model=ApiResponse[ClaimPrivate],
+    summary="Duyệt yêu cầu (ADMIN, khi PENDING / UNDER_REVIEW)",
+)
+async def approve_claim(
+    id: UUID, admin: Admin, service: Service, data: ClaimApprove | None = None
+):
+    result = await service.approve(id, data or ClaimApprove(), admin)
+    return ApiResponse(message="Đã duyệt yêu cầu", data=result)
+
+
+@router.post(
+    "/{id}/reject",
+    response_model=ApiResponse[ClaimPrivate],
+    summary="Từ chối yêu cầu (ADMIN, bắt buộc review_note)",
+)
+async def reject_claim(id: UUID, data: ClaimReject, admin: Admin, service: Service):
+    return ApiResponse(message="Đã từ chối yêu cầu", data=await service.reject(id, data, admin))
 
 
 @router.post(

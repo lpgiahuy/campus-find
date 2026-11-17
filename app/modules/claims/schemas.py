@@ -15,6 +15,7 @@ MAX_EVIDENCE = 10
 class ClaimScope(StrEnum):
     MINE = "mine"
     RECEIVED = "received"
+    ALL = "all"  # chỉ ADMIN
 
 
 class EvidenceCreate(BaseSchema):
@@ -40,6 +41,14 @@ class ClaimCreate(BaseSchema):
     lost_report_id: UUID | None = None
     reason: str = Field(min_length=1, max_length=2000)
     evidence: list[EvidenceCreate] = Field(default_factory=list, max_length=MAX_EVIDENCE)
+
+
+class ClaimApprove(BaseSchema):
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class ClaimReject(BaseSchema):
+    review_note: str = Field(min_length=1, max_length=2000)  # claimant cần biết lý do
 
 
 class EvidenceRead(BaseSchema):

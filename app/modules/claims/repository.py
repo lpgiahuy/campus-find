@@ -2,12 +2,15 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Claim, ClaimEvidence, FoundReport, User
 from app.modules.claims.schemas import ClaimScope
+from app.shared.enums import ClaimStatus
 from app.shared.repository import BaseRepository
+
+CANCELLABLE = (ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW, ClaimStatus.APPROVED)
 
 
 @dataclass
@@ -29,9 +32,14 @@ class ClaimRepository(BaseRepository[Claim]):
             select(Claim)
             .where(Claim.id == claim_id)
             .with_for_update()
-            .execution_options(populate_existing=True)  # bỏ bản đã đọc trước khi khóa
+            .execution_options(populate_existing=True)  # đọc lại trạng thái sau khi chờ khóa
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_report_ids(self, claim_id: UUID) -> tuple[UUID, UUID | None] | None:
+        stmt = select(Claim.found_report_id, Claim.lost_report_id).where(Claim.id == claim_id)
+        row = (await self.db.execute(stmt)).one_or_none()
+        return None if row is None else (row[0], row[1])
 
     async def count_evidence(self, claim_id: UUID) -> int:
         stmt = select(func.count()).select_from(ClaimEvidence).where(ClaimEvidence.claim_id == claim_id)
@@ -48,7 +56,7 @@ class ClaimRepository(BaseRepository[Claim]):
         stmt = select(Claim)
         if scope == ClaimScope.MINE:
             stmt = stmt.where(Claim.claimant_id == user_id)
-        else:
+        elif scope == ClaimScope.RECEIVED:
             stmt = stmt.join(FoundReport, Claim.found_report_id == FoundReport.id).where(
                 FoundReport.user_id == user_id
             )
@@ -60,6 +68,38 @@ class ClaimRepository(BaseRepository[Claim]):
         ).scalar_one()
         page = stmt.order_by(Claim.created_at.desc(), Claim.id).offset(offset).limit(limit)
         return list((await self.db.execute(page)).scalars().all()), total
+
+    async def has_other_approved(self, found_id: UUID, exclude_id: UUID) -> bool:
+        stmt = select(
+            select(Claim.id)
+            .where(
+                Claim.found_report_id == found_id,
+                Claim.id != exclude_id,
+                Claim.status == ClaimStatus.APPROVED,
+            )
+            .exists()
+        )
+        return (await self.db.execute(stmt)).scalar_one()
+
+    async def cancel_others(self, claim: Claim, admin_id: UUID) -> None:
+        """Hủy claim còn sống trên cùng tin nhặt / cùng tin mất của claim vừa bàn giao."""
+        same_report = [Claim.found_report_id == claim.found_report_id]
+        if claim.lost_report_id is not None:
+            same_report.append(Claim.lost_report_id == claim.lost_report_id)
+        await self.db.execute(
+            update(Claim)
+            .where(
+                Claim.id != claim.id,
+                Claim.status.in_(CANCELLABLE),
+                or_(*same_report),
+            )
+            .values(
+                status=ClaimStatus.CANCELLED,
+                reviewed_by=admin_id,
+                review_note="Vật đã được bàn giao cho yêu cầu khác",
+            )
+            .execution_options(synchronize_session="fetch")
+        )
 
     async def load_details(self, claims: list[Claim]) -> list[ClaimDetail]:
         """Gom tin nhặt, bằng chứng, 2 user cho cả trang bằng 3 câu query (không N+1)."""

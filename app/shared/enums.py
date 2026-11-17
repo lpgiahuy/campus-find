@@ -30,6 +30,11 @@ class ClaimStatus(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class HandoverMethod(StrEnum):  # khớp ck_handover_method
+    IN_PERSON = "IN_PERSON"
+    ADMIN_ASSISTED = "ADMIN_ASSISTED"
+
+
 class MatchLevel(StrEnum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
