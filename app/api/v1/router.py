@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.modules.admin.controller import router as admin_router
 from app.modules.auth.controller import router as auth_router
 from app.modules.catalog.controller import categories_router, locations_router
 from app.modules.claims.controller import router as claims_router
@@ -20,3 +21,4 @@ api_v1_router.include_router(matching_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(claims_router)
 api_v1_router.include_router(handovers_router)
+api_v1_router.include_router(admin_router)

@@ -31,7 +31,7 @@ from app.modules.reports.service import (
     ReportService,
     is_owner_or_admin,
 )
-from app.shared.enums import FoundReportStatus, LostReportStatus
+from app.shared.enums import FoundReportStatus, LostReportStatus, SortOrder
 from app.shared.schemas import (
     ApiResponse,
     BaseSchema,
@@ -103,6 +103,7 @@ def build_report_router(
         mine: Annotated[
             bool, Query(description="Chỉ tin của tôi (cần đăng nhập)")
         ] = False,
+        order: Annotated[SortOrder, Query(description="Sắp xếp theo thời gian mất / nhặt")] = SortOrder.DESC,
     ):
         items, total = await service.list(
             user,
@@ -110,6 +111,7 @@ def build_report_router(
             status=status,
             category_id=category_id,
             location_id=location_id,
+            order=order,
             offset=pagination.offset,
             limit=pagination.page_size,
         )
