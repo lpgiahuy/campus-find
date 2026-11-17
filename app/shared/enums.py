@@ -20,6 +20,16 @@ class FoundReportStatus(StrEnum):
     CLOSED = "CLOSED"
 
 
+class ClaimStatus(StrEnum):
+    PENDING = "PENDING"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+
+
 class MatchLevel(StrEnum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
