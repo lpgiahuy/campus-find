@@ -1,5 +1,24 @@
 from fastapi import APIRouter
 
-api_v1_router = APIRouter()
+from app.modules.admin.controller import router as admin_router
+from app.modules.auth.controller import router as auth_router
+from app.modules.catalog.controller import categories_router, locations_router
+from app.modules.claims.controller import router as claims_router
+from app.modules.handovers.controller import router as handovers_router
+from app.modules.matching.controller import notifications_router
+from app.modules.matching.controller import router as matching_router
+from app.modules.reports.controller import found_reports_router, lost_reports_router
+from app.modules.users.controller import router as users_router
 
-# Các controller routers (auth, users, catalog, reports, matching, claims, handovers) sẽ được đăng ký tại đây khi tiến hành code.
+api_v1_router = APIRouter()
+api_v1_router.include_router(auth_router)
+api_v1_router.include_router(categories_router)
+api_v1_router.include_router(locations_router)
+api_v1_router.include_router(users_router)
+api_v1_router.include_router(lost_reports_router)
+api_v1_router.include_router(found_reports_router)
+api_v1_router.include_router(matching_router)
+api_v1_router.include_router(notifications_router)
+api_v1_router.include_router(claims_router)
+api_v1_router.include_router(handovers_router)
+api_v1_router.include_router(admin_router)

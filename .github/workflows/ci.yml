@@ -28,6 +28,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://campusfind:ci-test-password@localhost:5432/campusfind_test
       TEST_DATABASE_URL: postgresql+asyncpg://campusfind:ci-test-password@localhost:5432/campusfind_test
+      JWT_SECRET_KEY: ci-only-jwt-secret-key-not-for-production
     steps:
       - name: Lấy mã nguồn
         uses: actions/checkout@v6
