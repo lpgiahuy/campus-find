@@ -38,9 +38,11 @@ def make_client(admin):
 
 async def test_requires_login():
     app.dependency_overrides[get_db] = dummy_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        codes = [(await c.get(path)).status_code for path in PATHS]
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            codes = [(await c.get(path)).status_code for path in PATHS]
+    finally:
+        app.dependency_overrides.clear()
     assert codes == [401] * 3
 
 

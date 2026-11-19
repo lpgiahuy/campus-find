@@ -44,7 +44,7 @@ class UserRead(BaseSchema):
     id: UUID
     email: str
     full_name: str
-    role: UserRole
+    role: UserRole = Field(examples=["USER"])
     contact_phone: Optional[str]
     allow_contact_sharing: bool
     is_active: bool
