@@ -26,7 +26,13 @@ from app.modules.claims.schemas import (
 )
 from app.modules.reports.repository import ReportRepository
 from app.modules.reports.schemas import FoundReportPublic
-from app.shared.enums import ClaimStatus, FoundReportStatus, LostReportStatus, UserRole
+from app.shared.enums import (
+    ClaimStatus,
+    FoundReportStatus,
+    LostReportStatus,
+    SortOrder,
+    UserRole,
+)
 from app.shared.service import BaseService
 from app.shared.utils import handle_unique_violation
 
@@ -84,10 +90,13 @@ class ClaimService(BaseService):
         status: ClaimStatus | None,
         offset: int,
         limit: int,
+        order: SortOrder = SortOrder.DESC,
     ) -> tuple[list[ClaimRead], int]:
         if scope == ClaimScope.ALL and user.role != UserRole.ADMIN:
             raise ForbiddenError("Chỉ ADMIN được xem toàn bộ yêu cầu")
-        claims, total = await self.claims.list_for(user.id, scope, status, offset, limit)
+        claims, total = await self.claims.list_for(
+            user.id, scope, status, offset, limit, order
+        )
         details = await self.claims.load_details(claims)
         return [self._to_read(d, user) for d in details], total
 

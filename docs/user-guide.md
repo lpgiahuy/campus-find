@@ -86,7 +86,7 @@ Sau khi database đã có các bảng, chạy:
 python -m scripts.seed_demo --admin-email admin@example.com --admin-name "Campus Admin"
 ```
 
-Thay email và tên bằng giá trị bạn muốn. Chương trình yêu cầu nhập và xác nhận mật khẩu admin tối thiểu 12 ký tự; ký tự mật khẩu có thể không hiện khi gõ. Script thêm các danh mục và địa điểm mẫu nếu chúng chưa tồn tại. Nếu email đã tồn tại, script dừng và không thay đổi tài khoản.
+Thay email và tên bằng giá trị bạn muốn. Chương trình yêu cầu nhập và xác nhận mật khẩu admin tối thiểu 8 ký tự; ký tự mật khẩu có thể không hiện khi gõ. Script thêm các danh mục và địa điểm mẫu nếu chúng chưa tồn tại. Nếu email đã tồn tại, script dừng và không thay đổi tài khoản.
 
 Admin được lưu trong database, nhưng API đăng nhập vẫn thuộc phần chưa triển khai. Database đã được seed trước đó không cần chạy lại chỉ để tạo cùng tài khoản.
 

@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FoundReport, LostReport
+from app.shared.enums import SortOrder
 from app.shared.repository import BaseRepository
 
 Report = LostReport | FoundReport
@@ -28,6 +29,7 @@ class ReportRepository(BaseRepository[Report]):
         category_id: UUID | None = None,
         location_id: UUID | None = None,
         user_id: UUID | None = None,
+        order: SortOrder = SortOrder.DESC,
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[Report], int]:
@@ -47,7 +49,10 @@ class ReportRepository(BaseRepository[Report]):
         stmt = (
             select(self.model)
             .where(*filters)
-            .order_by(self.time_column.desc(), self.model.id)
+            .order_by(
+                self.time_column.desc() if order == SortOrder.DESC else self.time_column.asc(),
+                self.model.id,
+            )
             .offset(offset)
             .limit(limit)
         )

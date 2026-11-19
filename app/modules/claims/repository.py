@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Claim, ClaimEvidence, FoundReport, User
 from app.modules.claims.schemas import ClaimScope
-from app.shared.enums import ClaimStatus
+from app.shared.enums import ClaimStatus, SortOrder
 from app.shared.repository import BaseRepository
 
 CANCELLABLE = (ClaimStatus.PENDING, ClaimStatus.UNDER_REVIEW, ClaimStatus.APPROVED)
@@ -52,6 +52,7 @@ class ClaimRepository(BaseRepository[Claim]):
         status: str | None,
         offset: int,
         limit: int,
+        order: SortOrder = SortOrder.DESC,
     ) -> tuple[list[Claim], int]:
         stmt = select(Claim)
         if scope == ClaimScope.MINE:
@@ -66,7 +67,8 @@ class ClaimRepository(BaseRepository[Claim]):
         total = (
             await self.db.execute(select(func.count()).select_from(stmt.subquery()))
         ).scalar_one()
-        page = stmt.order_by(Claim.created_at.desc(), Claim.id).offset(offset).limit(limit)
+        created = Claim.created_at.desc() if order == SortOrder.DESC else Claim.created_at.asc()
+        page = stmt.order_by(created, Claim.id).offset(offset).limit(limit)
         return list((await self.db.execute(page)).scalars().all()), total
 
     async def has_other_approved(self, found_id: UUID, exclude_id: UUID) -> bool:

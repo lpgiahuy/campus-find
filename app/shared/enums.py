@@ -39,3 +39,8 @@ class MatchLevel(StrEnum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
+
+
+class SortOrder(StrEnum):
+    ASC = "asc"
+    DESC = "desc"

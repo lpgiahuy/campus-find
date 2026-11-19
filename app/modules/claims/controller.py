@@ -21,7 +21,7 @@ from app.modules.claims.schemas import (
     EvidenceCreate,
 )
 from app.modules.claims.service import ClaimService
-from app.shared.enums import ClaimStatus
+from app.shared.enums import ClaimStatus, SortOrder
 from app.shared.schemas import (
     ApiResponse,
     PaginatedData,
@@ -62,9 +62,10 @@ async def list_claims(
     service: Service,
     scope: Annotated[ClaimScope, Query()] = ClaimScope.MINE,
     claim_status: Annotated[ClaimStatus | None, Query(alias="status")] = None,
+    order: Annotated[SortOrder, Query(description="Sắp xếp theo ngày tạo")] = SortOrder.DESC,
 ):
     items, total = await service.list(
-        user, scope, claim_status, pagination.offset, pagination.page_size
+        user, scope, claim_status, pagination.offset, pagination.page_size, order
     )
     return PaginatedResponse(
         data=PaginatedData(

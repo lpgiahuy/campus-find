@@ -13,7 +13,7 @@ from app.core.exceptions import (
 from app.db.models import FoundReport, LostReport, User
 from app.modules.catalog.repository import CategoryRepository, LocationRepository
 from app.modules.reports.repository import Report, ReportRepository
-from app.shared.enums import FoundReportStatus, LostReportStatus, UserRole
+from app.shared.enums import FoundReportStatus, LostReportStatus, SortOrder, UserRole
 from app.shared.schemas import BaseSchema
 from app.shared.service import BaseService
 
@@ -53,6 +53,7 @@ class ReportService(BaseService):
         status: str | None = None,
         category_id: UUID | None = None,
         location_id: UUID | None = None,
+        order: SortOrder = SortOrder.DESC,
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[Report], int]:
@@ -66,6 +67,7 @@ class ReportService(BaseService):
             category_id=category_id,
             location_id=location_id,
             user_id=user.id if mine else None,
+            order=order,
             offset=offset,
             limit=limit,
         )
