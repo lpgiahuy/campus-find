@@ -23,9 +23,9 @@ def main():
     name = args.admin_name.strip()
     if not email or not name:
         parser.error('Email và họ tên Admin không được để trống')
-    password = getpass('Mật khẩu Admin (tối thiểu 12 ký tự): ')
-    if len(password) < 12:
-        parser.error('Mật khẩu Admin phải có ít nhất 12 ký tự')
+    password = getpass('Mật khẩu Admin (tối thiểu 8 ký tự): ')
+    if len(password) < 8:
+        parser.error('Mật khẩu Admin phải có ít nhất 8 ký tự')
     if password != getpass('Xác nhận lại mật khẩu Admin: '):
         parser.error('Mật khẩu xác nhận không khớp')
 
